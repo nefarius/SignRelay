@@ -18,6 +18,12 @@ Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/p
 | `Publish` | All of the above (default entry target for `dotnet run --project build/...`) |
 | `All` | Same as `Publish` |
 
+**Docker image (optional, separate command)** — requires Docker on `PATH`:
+
+| Target | What it does |
+|--------|----------------|
+| `DockerServer` | `docker build` using [docker/Dockerfile](../docker/Dockerfile) with build context at the **repository root** (same as [compose.yml](../docker/compose.yml)). Tags the image as **`signrelay/server:latest`** by default. Override with **`--ServerDockerImage name:tag`**. |
+
 Examples:
 
 ```powershell
@@ -25,6 +31,8 @@ Examples:
 .\build.ps1 Publish
 .\build.ps1 PackCli
 .\build.ps1 PublishServer
+.\build.ps1 DockerServer
+.\build.ps1 DockerServer --ServerDockerImage myregistry/signrelay:1.0
 ```
 
 ```bash
@@ -37,6 +45,7 @@ Equivalent without the scripts:
 
 ```bash
 dotnet run --project build/_build.csproj -- Publish
+dotnet run --project build/_build.csproj -- DockerServer
 ```
 
 ## Relay server (Docker / VPS)

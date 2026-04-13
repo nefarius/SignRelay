@@ -26,6 +26,7 @@
       "enum": [
         "All",
         "Clean",
+        "DockerServer",
         "PackCli",
         "PackContracts",
         "Publish",
@@ -107,6 +108,10 @@
         "Configuration": {
           "type": "string",
           "description": "Configuration to build — Default is 'Release'"
+        },
+        "ServerDockerImage": {
+          "type": "string",
+          "description": "Docker image name:tag for docker/Dockerfile (SignRelay.Server). Default is 'signrelay/server:latest'"
         }
       }
     },

@@ -1,6 +1,8 @@
 using Nuke.Common;
 using Nuke.Common.IO;
+using Nuke.Common.Tools.Docker;
 using Nuke.Common.Tools.DotNet;
+using static Nuke.Common.Tools.Docker.DockerTasks;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 
 public sealed class Build : NukeBuild
@@ -9,6 +11,9 @@ public sealed class Build : NukeBuild
 
     [Parameter("Configuration to build — Default is 'Release'.")]
     readonly string Configuration = "Release";
+
+    [Parameter("Docker image name:tag for docker/Dockerfile (SignRelay.Server). Default is 'signrelay/server:latest'.")]
+    readonly string ServerDockerImage = "signrelay/server:latest";
 
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
     static AbsolutePath PackagesDirectory => ArtifactsDirectory / "packages";
@@ -19,6 +24,18 @@ public sealed class Build : NukeBuild
     static AbsolutePath CliProj => Src / "SignRelay.Cli" / "SignRelay.Cli.csproj";
     static AbsolutePath ServerProj => Src / "SignRelay.Server" / "SignRelay.Server.csproj";
     static AbsolutePath AgentProj => Src / "SignRelay.Agent" / "SignRelay.Agent.csproj";
+
+    static AbsolutePath ServerDockerfile => RootDirectory / "docker" / "Dockerfile";
+
+    /// <summary>Builds the relay server image (<c>docker build</c> with context at repo root, same as compose).</summary>
+    Target DockerServer => _ => _
+        .Executes(() =>
+        {
+            DockerBuild(s => s
+                .SetPath(RootDirectory)
+                .SetFile(ServerDockerfile)
+                .SetTag(new[] { ServerDockerImage }));
+        });
 
     Target Clean => _ => _
         .Executes(() =>
