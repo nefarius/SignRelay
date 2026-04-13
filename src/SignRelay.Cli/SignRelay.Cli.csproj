@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>SignRelay.Cli</RootNamespace>
     <PackAsTool>true</PackAsTool>
+    <PackageId>Nefarius.Tools.SignRelay</PackageId>
     <ToolCommandName>signrelay</ToolCommandName>
     <PackageOutputPath>./nupkg</PackageOutputPath>
   </PropertyGroup>
