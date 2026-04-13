@@ -1,4 +1,5 @@
-using System.Diagnostics;
+using CliWrap;
+using CliWrap.Buffered;
 
 namespace SignRelay.Agent;
 
@@ -10,55 +11,36 @@ public sealed class SignToolRunner
 
     public async Task<int> SignAsync(string signToolPath, string filePath, string? thumbprint, string? timestampUrl, string? extraArgs, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = signToolPath,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        psi.ArgumentList.Add("sign");
-        psi.ArgumentList.Add("/v");
-        psi.ArgumentList.Add("/fd");
-        psi.ArgumentList.Add("sha256");
+        var args = new List<string> { "sign", "/v", "/fd", "sha256" };
 
         if (!string.IsNullOrWhiteSpace(thumbprint))
         {
-            psi.ArgumentList.Add("/sha1");
-            psi.ArgumentList.Add(thumbprint);
+            args.Add("/sha1");
+            args.Add(thumbprint);
         }
 
         if (!string.IsNullOrWhiteSpace(timestampUrl))
         {
-            psi.ArgumentList.Add("/tr");
-            psi.ArgumentList.Add(timestampUrl);
-            psi.ArgumentList.Add("/td");
-            psi.ArgumentList.Add("sha256");
+            args.Add("/tr");
+            args.Add(timestampUrl);
+            args.Add("/td");
+            args.Add("sha256");
         }
 
         if (!string.IsNullOrWhiteSpace(extraArgs))
-        {
-            foreach (var part in extraArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                psi.ArgumentList.Add(part);
-        }
+            args.AddRange(extraArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
-        psi.ArgumentList.Add(filePath);
+        args.Add(filePath);
 
-        using var proc = Process.Start(psi);
-        if (proc is null)
-            throw new InvalidOperationException("Failed to start signtool.");
+        var result = await Cli.Wrap(signToolPath)
+            .WithArguments(args)
+            .ExecuteBufferedAsync(ct);
 
-        await proc.WaitForExitAsync(ct).ConfigureAwait(false);
-        var stdout = await proc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
-        var stderr = await proc.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(result.StandardOutput))
+            _log.LogInformation("{Out}", result.StandardOutput.Trim());
+        if (!string.IsNullOrWhiteSpace(result.StandardError))
+            _log.LogWarning("{Err}", result.StandardError.Trim());
 
-        if (!string.IsNullOrWhiteSpace(stdout))
-            _log.LogInformation("{Out}", stdout.Trim());
-        if (!string.IsNullOrWhiteSpace(stderr))
-            _log.LogWarning("{Err}", stderr.Trim());
-
-        return proc.ExitCode;
+        return result.ExitCode;
     }
 }
