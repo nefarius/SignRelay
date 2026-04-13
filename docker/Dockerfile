@@ -1,6 +1,8 @@
 # Build stage
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+# Required so SDK projects inherit TargetFramework (same as local builds); see repo root Directory.Build.props
+COPY Directory.Build.props .
 COPY src/SignRelay.Contracts/SignRelay.Contracts.csproj src/SignRelay.Contracts/
 COPY src/SignRelay.Server/SignRelay.Server.csproj src/SignRelay.Server/
 RUN dotnet restore src/SignRelay.Server/SignRelay.Server.csproj
