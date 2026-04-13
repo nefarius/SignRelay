@@ -5,6 +5,12 @@
 - **.NET SDK 10.x** — the repo pins a minimum SDK in [global.json](../global.json) (`rollForward: latestFeature`); install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or a newer 10.x patch.
 - **NUKE** — automation lives under [build/](../build/). You do **not** need the global `nuke` tool: use the bootstrappers at the repo root.
 
+### Versioning ([MinVer](https://github.com/adamralph/minver))
+
+- Shipping projects use **MinVer** with tag prefix **`v`** (e.g. tag **`v1.2.3`** in Git). Version flows into assemblies, NuGet packages, and published outputs.
+- The NUKE project [`build/_build.csproj`](../build/_build.csproj) is excluded from MinVer.
+- **Docker** builds do **not** copy **`.git`** into the image. The image build receives the version via **`MINVERVERSIONOVERRIDE`** (computed on the host). NUKE **`DockerServer`** runs `dotnet msbuild … -getProperty:Version` at the repo root and passes that value as a Docker build arg. Override with **`--MinVerVersionOverride 1.2.3`** when you need an explicit version without Git.
+
 ### NUKE targets (pack & publish)
 
 Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/packages`**, published apps in **`artifacts/publish/<ProjectName>`**.
@@ -22,7 +28,7 @@ Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/p
 
 | Target | What it does |
 |--------|----------------|
-| `DockerServer` | `docker build` using [docker/Dockerfile](../docker/Dockerfile) with build context at the **repository root** (same as [compose.yml](../docker/compose.yml)). Tags the image as **`signrelay/server:latest`** by default. Override with **`--ServerDockerImage name:tag`**. |
+| `DockerServer` | `docker build` using [docker/Dockerfile](../docker/Dockerfile) with build context at the **repository root** (same as [compose.yml](../docker/compose.yml)). Injects **`MINVERVERSIONOVERRIDE`** from host MinVer/`dotnet msbuild` (no `.git` in context). Tags **`signrelay/server:latest`** by default — use **`--ServerDockerImage`**. Optional **`--MinVerVersionOverride`** for CI. |
 
 Examples:
 
@@ -33,7 +39,17 @@ Examples:
 .\build.ps1 PublishServer
 .\build.ps1 DockerServer
 .\build.ps1 DockerServer --ServerDockerImage myregistry/signrelay:1.0
+.\build.ps1 DockerServer --MinVerVersionOverride 2.0.0
 ```
+
+Manual **`docker build`** / **`docker compose build`** (without NUKE): set **`MINVERVERSIONOVERRIDE`** to the same value MinVer would compute (requires a clone with Git tags), then build:
+
+```powershell
+$v = dotnet msbuild src/SignRelay.Server/SignRelay.Server.csproj -restore -getProperty:Version -nologo -verbosity:quiet
+docker build -f docker/Dockerfile --build-arg MINVERVERSIONOVERRIDE=$v -t signrelay/server:latest .
+```
+
+For **`docker compose`**, export **`MINVERVERSIONOVERRIDE`** before building (see [compose.yml](../docker/compose.yml) `build.args`), or rely on NUKE **`DockerServer`** which passes the arg automatically.
 
 ```bash
 # Linux / macOS

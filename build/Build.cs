@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Common.Tools.Docker;
@@ -15,6 +16,9 @@ public sealed class Build : NukeBuild
     [Parameter("Docker image name:tag for docker/Dockerfile (SignRelay.Server). Default is 'signrelay/server:latest'.")]
     readonly string ServerDockerImage = "signrelay/server:latest";
 
+    [Parameter("If set, passed to docker build as MINVERVERSIONOVERRIDE instead of computing Version via dotnet msbuild on the host (Git/MinVer).")]
+    readonly string MinVerVersionOverride = "";
+
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
     static AbsolutePath PackagesDirectory => ArtifactsDirectory / "packages";
     static AbsolutePath PublishRoot => ArtifactsDirectory / "publish";
@@ -31,11 +35,42 @@ public sealed class Build : NukeBuild
     Target DockerServer => _ => _
         .Executes(() =>
         {
+            var minVer = string.IsNullOrWhiteSpace(MinVerVersionOverride)
+                ? QueryMsBuildVersion(ServerProj)
+                : MinVerVersionOverride.Trim();
+            if (string.IsNullOrWhiteSpace(minVer))
+                throw new InvalidOperationException("Could not resolve a version for MINVERVERSIONOVERRIDE (set MinVerVersionOverride or ensure MinVer can compute Version from Git tags).");
+
             DockerBuild(s => s
                 .SetPath(RootDirectory)
                 .SetFile(ServerDockerfile)
-                .SetTag(new[] { ServerDockerImage }));
+                .SetTag(new[] { ServerDockerImage })
+                .SetBuildArg(new[] { $"MINVERVERSIONOVERRIDE={minVer}" }));
         });
+
+    /// <summary>Reads <see cref="Version"/> from MSBuild/MinVer (requires <c>.git</c> on the host unless overridden).</summary>
+    static string QueryMsBuildVersion(AbsolutePath projectPath)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"msbuild \"{projectPath}\" -restore -getProperty:Version -nologo -verbosity:quiet",
+            WorkingDirectory = RootDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var p = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start dotnet msbuild.");
+        var stdout = p.StandardOutput.ReadToEnd();
+        var stderr = p.StandardError.ReadToEnd();
+        p.WaitForExit();
+        if (p.ExitCode != 0)
+            throw new InvalidOperationException($"dotnet msbuild -getProperty:Version failed (exit {p.ExitCode}): {stderr}");
+
+        return stdout.Trim();
+    }
 
     Target Clean => _ => _
         .Executes(() =>

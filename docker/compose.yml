@@ -3,6 +3,10 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      # Same as NUKE DockerServer: MinVer version without copying .git into the image. Set before `docker compose build`, e.g.
+      #   export MINVERVERSIONOVERRIDE=$(dotnet msbuild src/SignRelay.Server/SignRelay.Server.csproj -restore -getProperty:Version -nologo -verbosity:quiet)
+      args:
+        MINVERVERSIONOVERRIDE: ${MINVERVERSIONOVERRIDE:-}
     ports:
       - "8080:8080"
     environment:
