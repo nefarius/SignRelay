@@ -1,0 +1,45 @@
+# SignRelay deployment notes
+
+## Relay server (Docker / VPS)
+
+- Map **port 8080** (or place a reverse proxy in front with TLS). The container listens on `0.0.0.0:8080`.
+- Persist **`SignRelay__StoragePath`** (default `/data` in [compose.yml](../docker/compose.yml)) so SQLite and uploaded blobs survive restarts.
+- Set secrets via environment variables (ASP.NET Core configuration):
+  - **`SignRelay__CiToken`** — bearer token used by CI / `signrelay submit --token`.
+  - **`SignRelay__AgentToken`** — bearer token used by the Windows agent for lease, upload, and complete.
+- **Job size and lifetime** — tune `SignRelay__MaxTotalJobBytes` and `SignRelay__JobTimeToLive` (TimeSpan format, e.g. `02:00:00`) in [appsettings.json](../src/SignRelay.Server/appsettings.json) or environment.
+
+### Reverse proxy long reads (SSE)
+
+The CI client holds **`GET /api/v1/jobs/{id}/events`** open for the whole signing window (Server-Sent Events). Configure your proxy so the **read timeout** is at least as large as the longest expected job (often 30–60 minutes):
+
+- **nginx**: `proxy_read_timeout 3600s;` (and similar for `send_timeout` if needed) on the location that fronts the relay.
+- **Caddy**: `flush_interval -1` and appropriate timeouts on the route.
+- **Traefik**: increase forwarding timeouts for the service.
+
+Without this, the proxy may close the stream while the desktop is still signing, and the CI step fails.
+
+## Windows agent
+
+- Run the agent on the machine that holds the code-signing certificate. Configure [appsettings.json](../src/SignRelay.Agent/appsettings.json) or user-secrets / environment:
+  - **`SignRelayAgent__RelayUrl`** — public base URL of the relay (HTTPS in production).
+  - **`SignRelayAgent__AgentToken`** — must match **`SignRelay__AgentToken`** on the server.
+  - **`SignRelayAgent__SignToolPath`** — full path to `signtool.exe` from the Windows SDK.
+  - **`SignRelayAgent__CertificateThumbprint`** — SHA1 thumbprint of the signing cert (if required by your signing workflow).
+- **Interactive session**: If unlocking the key store requires UI (smart card or password UI), the process must run in an **interactive user session** (e.g. logon startup task or tray host). A session-0 Windows Service alone may not see prompts from your existing unlock software.
+
+## CI usage
+
+Install the CLI as a global tool from the packaged NuGet, or invoke the published `SignRelay.Cli` binary. Example:
+
+```bash
+signrelay submit --server https://relay.example.com --token "$SIGN_RELAY_CI_TOKEN" --output ./signed ./artifacts/MyApp.exe
+```
+
+Set **`SIGN_RELAY_CI_TOKEN`** to the same value as **`SignRelay__CiToken`** on the server.
+
+## Security checklist
+
+- Use **TLS** in front of the relay; do not expose plaintext tokens on untrusted networks.
+- Rotate **CI** and **agent** tokens independently; they are distinct principals.
+- Restrict who can reach the relay API (firewall / VPN) if possible.

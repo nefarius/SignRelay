@@ -1,0 +1,18 @@
+services:
+  signrelay:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      SignRelay__StoragePath: /data
+      SignRelay__CiToken: ${SIGN_RELAY_CI_TOKEN:?set SIGN_RELAY_CI_TOKEN}
+      SignRelay__AgentToken: ${SIGN_RELAY_AGENT_TOKEN:?set SIGN_RELAY_AGENT_TOKEN}
+    volumes:
+      - signrelay-data:/data
+    restart: unless-stopped
+
+volumes:
+  signrelay-data:

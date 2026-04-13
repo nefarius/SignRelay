@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SignRelay.Agent/SignRelay.Agent.csproj" />
+    <Project Path="src/SignRelay.Cli/SignRelay.Cli.csproj" />
+    <Project Path="src/SignRelay.Contracts/SignRelay.Contracts.csproj" />
+    <Project Path="src/SignRelay.Server/SignRelay.Server.csproj" />
+  </Folder>
+</Solution>
