@@ -31,14 +31,14 @@ public sealed class GetJobEventsEndpoint : EndpointWithoutRequest
         var id = Route<string>("id")!;
         if (!JobAccess.CanAccessJob(User, id))
         {
-            await SendUnauthorizedAsync(ct).ConfigureAwait(false);
+            await Send.UnauthorizedAsync(ct).ConfigureAwait(false);
             return;
         }
 
         var job = await _jobs.GetJobAsync(id, ct).ConfigureAwait(false);
         if (job is null)
         {
-            await SendNotFoundAsync(ct).ConfigureAwait(false);
+            await Send.NotFoundAsync(ct).ConfigureAwait(false);
             return;
         }
 

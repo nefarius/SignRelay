@@ -22,6 +22,6 @@ public sealed class PostWorkerFailEndpoint : Endpoint<WorkerFailRequest>
     {
         var jobId = Route<string>("jobId")!;
         await _jobs.FailJobAsync(jobId, req.Error, ct).ConfigureAwait(false);
-        await SendOkAsync(ct).ConfigureAwait(false);
+        await Send.OkAsync(ct).ConfigureAwait(false);
     }
 }

@@ -23,17 +23,17 @@ public sealed class GetJobSignedFileEndpoint : EndpointWithoutRequest
         var fileName = Route<string>("fileName")!;
         if (!JobAccess.CanAccessJob(User, id))
         {
-            await SendUnauthorizedAsync(ct).ConfigureAwait(false);
+            await Send.UnauthorizedAsync(ct).ConfigureAwait(false);
             return;
         }
 
         await using var stream = await _jobs.OpenSignedAsync(id, fileName, ct).ConfigureAwait(false);
         if (stream is null)
         {
-            await SendNotFoundAsync(ct).ConfigureAwait(false);
+            await Send.NotFoundAsync(ct).ConfigureAwait(false);
             return;
         }
 
-        await SendStreamAsync(stream, fileName, null, "application/octet-stream", null, false, ct).ConfigureAwait(false);
+        await Send.StreamAsync(stream, fileName, null, "application/octet-stream", null, false, ct).ConfigureAwait(false);
     }
 }

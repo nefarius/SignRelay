@@ -1,5 +1,44 @@
 # SignRelay deployment notes
 
+## Build prerequisites
+
+- **.NET SDK 10.x** — the repo pins a minimum SDK in [global.json](../global.json) (`rollForward: latestFeature`); install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or a newer 10.x patch.
+- **NUKE** — automation lives under [build/](../build/). You do **not** need the global `nuke` tool: use the bootstrappers at the repo root.
+
+### NUKE targets (pack & publish)
+
+Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/packages`**, published apps in **`artifacts/publish/<ProjectName>`**.
+
+| Target | What it does |
+|--------|----------------|
+| `PackContracts` | `dotnet pack` [SignRelay.Contracts](../src/SignRelay.Contracts/SignRelay.Contracts.csproj) |
+| `PackCli` | `dotnet pack` [SignRelay.Cli](../src/SignRelay.Cli/SignRelay.Cli.csproj) (global tool package) |
+| `PublishServer` | `dotnet publish` [SignRelay.Server](../src/SignRelay.Server/SignRelay.Server.csproj) |
+| `PublishAgent` | `dotnet publish` [SignRelay.Agent](../src/SignRelay.Agent/SignRelay.Agent.csproj) |
+| `Publish` | All of the above (default entry target for `dotnet run --project build/...`) |
+| `All` | Same as `Publish` |
+
+Examples:
+
+```powershell
+# Windows — builds the NUKE project, then runs the target
+.\build.ps1 Publish
+.\build.ps1 PackCli
+.\build.ps1 PublishServer
+```
+
+```bash
+# Linux / macOS
+chmod +x ./build.sh
+./build.sh Publish
+```
+
+Equivalent without the scripts:
+
+```bash
+dotnet run --project build/_build.csproj -- Publish
+```
+
 ## Relay server (Docker / VPS)
 
 - Map **port 8080** (or place a reverse proxy in front with TLS). The container listens on `0.0.0.0:8080`.

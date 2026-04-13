@@ -25,10 +25,10 @@ public sealed class GetWorkerUnsignedFileEndpoint : EndpointWithoutRequest
         await using var stream = await _jobs.OpenUnsignedAsync(jobId, fileName, ct).ConfigureAwait(false);
         if (stream is null)
         {
-            await SendNotFoundAsync(ct).ConfigureAwait(false);
+            await Send.NotFoundAsync(ct).ConfigureAwait(false);
             return;
         }
 
-        await SendStreamAsync(stream, fileName, null, "application/octet-stream", null, false, ct).ConfigureAwait(false);
+        await Send.StreamAsync(stream, fileName, null, "application/octet-stream", null, false, ct).ConfigureAwait(false);
     }
 }

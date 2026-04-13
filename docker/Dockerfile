@@ -1,5 +1,5 @@
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY src/SignRelay.Contracts/SignRelay.Contracts.csproj src/SignRelay.Contracts/
 COPY src/SignRelay.Server/SignRelay.Server.csproj src/SignRelay.Server/
@@ -9,7 +9,7 @@ COPY src/SignRelay.Server/ src/SignRelay.Server/
 RUN dotnet publish src/SignRelay.Server/SignRelay.Server.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080

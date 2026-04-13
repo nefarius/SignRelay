@@ -28,7 +28,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
         if (!HttpContext.Request.HasFormContentType)
         {
             AddError("Request must be multipart/form-data.");
-            await SendErrorsAsync(400, ct).ConfigureAwait(false);
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
 
@@ -36,7 +36,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
         if (string.IsNullOrWhiteSpace(manifestJson))
         {
             AddError("Missing form field 'manifest'.");
-            await SendErrorsAsync(400, ct).ConfigureAwait(false);
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
 
@@ -48,14 +48,14 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
         catch (JsonException)
         {
             AddError("Manifest is not valid JSON.");
-            await SendErrorsAsync(400, ct).ConfigureAwait(false);
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
 
         if (manifest is null || manifest.Files.Count == 0)
         {
             AddError("Manifest must contain at least one file entry.");
-            await SendErrorsAsync(400, ct).ConfigureAwait(false);
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
 
@@ -66,7 +66,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
             if (f is null || f.Length == 0)
             {
                 AddError($"Missing non-empty form file 'file_{i}'.");
-                await SendErrorsAsync(400, ct).ConfigureAwait(false);
+                await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -86,7 +86,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
             foreach (var (_, s, _) in inputs)
                 await s.DisposeAsync().ConfigureAwait(false);
 
-            await SendOkAsync(
+            await Send.OkAsync(
                     new SubmitJobResponse
                     {
                         JobId = job.Id,
@@ -102,7 +102,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
                 await s.DisposeAsync().ConfigureAwait(false);
 
             AddError(ex.Message);
-            await SendErrorsAsync(400, ct).ConfigureAwait(false);
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
         }
     }
 }

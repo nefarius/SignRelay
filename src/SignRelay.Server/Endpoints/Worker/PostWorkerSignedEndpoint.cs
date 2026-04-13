@@ -24,7 +24,7 @@ public sealed class PostWorkerSignedEndpoint : EndpointWithoutRequest
         if (!HttpContext.Request.HasFormContentType)
         {
             AddError("Request must be multipart/form-data.");
-            await SendErrorsAsync(400, ct).ConfigureAwait(false);
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
 
@@ -40,19 +40,19 @@ public sealed class PostWorkerSignedEndpoint : EndpointWithoutRequest
         if (files.Count == 0)
         {
             AddError("Expected one or more form files named file_0, file_1, ...");
-            await SendErrorsAsync(400, ct).ConfigureAwait(false);
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
 
         try
         {
             await _jobs.SaveSignedFilesAsync(jobId, files, ct).ConfigureAwait(false);
-            await SendOkAsync(ct).ConfigureAwait(false);
+            await Send.OkAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             AddError(ex.Message);
-            await SendErrorsAsync(400, ct).ConfigureAwait(false);
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
         }
     }
 }

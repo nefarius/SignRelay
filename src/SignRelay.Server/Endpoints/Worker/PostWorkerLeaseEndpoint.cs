@@ -23,11 +23,11 @@ public sealed class PostWorkerLeaseEndpoint : Endpoint<WorkerLeaseRequest, Lease
         var lease = await _jobs.TryLeaseAsync(req.AgentId, ct).ConfigureAwait(false);
         if (lease is null)
         {
-            await SendNoContentAsync(ct).ConfigureAwait(false);
+            await Send.NoContentAsync(ct).ConfigureAwait(false);
             return;
         }
 
-        await SendOkAsync(
+        await Send.OkAsync(
                 new LeaseResponse
                 {
                     JobId = lease.JobId,
