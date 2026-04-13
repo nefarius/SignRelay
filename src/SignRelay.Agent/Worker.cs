@@ -11,27 +11,30 @@ public sealed class Worker : BackgroundService
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
 
-    private readonly AgentOptions _opt;
+    private readonly IOptions<AgentOptions> _opt;
     private readonly SignToolRunner _signTool;
+    private readonly IJobStaging _jobStaging;
     private readonly ILogger<Worker> _log;
 
-    public Worker(IOptions<AgentOptions> opt, SignToolRunner signTool, ILogger<Worker> log)
+    public Worker(IOptions<AgentOptions> opt, SignToolRunner signTool, IJobStaging jobStaging, ILogger<Worker> log)
     {
-        _opt = opt.Value;
+        _opt = opt;
         _signTool = signTool;
+        _jobStaging = jobStaging;
         _log = log;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (string.IsNullOrWhiteSpace(_opt.AgentToken))
+        var opt = _opt.Value;
+        if (string.IsNullOrWhiteSpace(opt.AgentToken))
         {
             _log.LogError("AgentToken is not configured.");
             return;
         }
 
-        var http = new HttpClient { BaseAddress = new Uri(_opt.RelayUrl.TrimEnd('/') + "/") };
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _opt.AgentToken);
+        var http = new HttpClient { BaseAddress = new Uri(opt.RelayUrl.TrimEnd('/') + "/") };
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", opt.AgentToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -40,7 +43,7 @@ public sealed class Worker : BackgroundService
                 var leased = await TryLeaseAsync(http, stoppingToken).ConfigureAwait(false);
                 if (leased is null)
                 {
-                    await Task.Delay(_opt.PollInterval, stoppingToken).ConfigureAwait(false);
+                    await Task.Delay(opt.PollInterval, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -53,14 +56,14 @@ public sealed class Worker : BackgroundService
             catch (Exception ex)
             {
                 _log.LogError(ex, "Agent loop error.");
-                await Task.Delay(_opt.PollInterval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(opt.PollInterval, stoppingToken).ConfigureAwait(false);
             }
         }
     }
 
     private async Task<LeaseResponse?> TryLeaseAsync(HttpClient http, CancellationToken ct)
     {
-        var body = JsonSerializer.Serialize(new WorkerLeaseRequest { AgentId = _opt.AgentId }, Json);
+        var body = JsonSerializer.Serialize(new WorkerLeaseRequest { AgentId = _opt.Value.AgentId }, Json);
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
         using var resp = await http.PostAsync("api/v1/worker/lease", content, ct).ConfigureAwait(false);
         if (resp.StatusCode == System.Net.HttpStatusCode.NoContent)
@@ -73,8 +76,10 @@ public sealed class Worker : BackgroundService
 
     private async Task ProcessJobAsync(HttpClient http, LeaseResponse lease, CancellationToken ct)
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "signrelay", lease.JobId);
+        var opt = _opt.Value;
+        var tempRoot = _jobStaging.GetJobDirectory(lease.JobId, opt);
         Directory.CreateDirectory(tempRoot);
+        _jobStaging.EnsureInteractiveUserCanAccessJobDirectory(tempRoot, opt);
 
         try
         {
@@ -93,10 +98,10 @@ public sealed class Worker : BackgroundService
                 }
 
                 var exit = await _signTool.SignAsync(
-                        _opt.SignToolPath,
+                        opt.SignToolPath,
                         dest,
-                        _opt.CertificateThumbprint,
-                        _opt.TimestampServerUrl,
+                        opt.CertificateThumbprint,
+                        opt.TimestampServerUrl,
                         entry.SignToolExtraArgs,
                         ct)
                     .ConfigureAwait(false);

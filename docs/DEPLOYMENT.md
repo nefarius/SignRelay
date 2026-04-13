@@ -90,7 +90,31 @@ Without this, the proxy may close the stream while the desktop is still signing,
   - **`SignRelayAgent__AgentToken`** — must match **`SignRelay__AgentToken`** on the server.
   - **`SignRelayAgent__SignToolPath`** — full path to `signtool.exe` from the Windows SDK. If that file does not exist and `signtool.exe` is not on `PATH`, the agent falls back to **[wdkwhere](https://github.com/nefarius/wdkwhere)** (`wdkwhere run signtool …`), which you can install with `dotnet tool install --global Nefarius.Tools.WDKWhere` ([NuGet](https://www.nuget.org/packages/Nefarius.Tools.WDKWhere)).
   - **`SignRelayAgent__CertificateThumbprint`** — SHA1 thumbprint of the signing cert (if required by your signing workflow).
-- **Interactive session**: If unlocking the key store requires UI (smart card or password UI), the process must run in an **interactive user session** (e.g. logon startup task or tray host). A session-0 Windows Service alone may not see prompts from your existing unlock software.
+  - **`SignRelayAgent__SigningExecution`** — `Auto` (default), `SameProcess`, or `InteractiveUser`. In **`Auto`**, when the agent runs as a **Windows Service**, `signtool` is launched in the **active console user session** so smart-card prompts, CSP UI, and user certificate stores work. When run from a console (development), signing stays in-process. Use **`InteractiveUser`** to force interactive-session signing if detection misbehaves, or **`SameProcess`** to force in-process signing even under the service.
+  - **`SignRelayAgent__JobStagingRoot`** — optional. When interactive signing is used, job files are staged under this directory (default: **`%ProgramData%\SignRelay\Agent\jobs`**). The service grants the console user access to each job folder. For non-interactive (console) runs, staging remains under `%TEMP%\signrelay\<jobId>`.
+  - **`SignRelayAgent__LoadUserProfileForInteractiveSigning`** — when `true` (default), the user profile is loaded for interactive `signtool` so **Current User** certificate stores resolve correctly.
+
+### Windows Service installation
+
+- Publish the agent (`PublishAgent` / `dotnet publish` on [SignRelay.Agent](../src/SignRelay.Agent/SignRelay.Agent.csproj)), then register a service that runs **`SignRelay.Agent.exe`** (adjust paths to your publish folder):
+
+```powershell
+sc.exe create SignRelayAgent binPath= "C:\Path\To\publish\SignRelay.Agent.exe" start= auto obj= LocalSystem
+sc.exe description SignRelayAgent "SignRelay signing agent"
+sc.exe start SignRelayAgent
+```
+
+- **Account**: Use **`LocalSystem`** (the default for `obj= LocalSystem` above) so the service can obtain the active console session user token (`WTSQueryUserToken`). A virtual or network service account typically **cannot** launch processes in the interactive session this way.
+- **No logged-on console user**: If nobody is logged on at the physical console, interactive signing cannot start `signtool` in a user session; jobs will fail until a user is logged on.
+- **RDP / multiple sessions**: The implementation targets the **active console session** (`WTSGetActiveConsoleSessionId`). Remote-only or multi-user scenarios may need a different session selection in a future version.
+- **Remove** the service:
+
+```powershell
+sc.exe stop SignRelayAgent
+sc.exe delete SignRelayAgent
+```
+
+- **Interactive session**: When **`SigningExecution`** is **`Auto`** and the process is a Windows Service, `signtool` runs in the logged-on console user’s session, so smart card or password UI from your CSP should appear on that desktop.
 
 ## CI usage
 
