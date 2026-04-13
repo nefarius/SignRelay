@@ -72,7 +72,7 @@ Without this, the proxy may close the stream while the desktop is still signing,
 - Run the agent on the machine that holds the code-signing certificate. Configure [appsettings.json](../src/SignRelay.Agent/appsettings.json) or user-secrets / environment:
   - **`SignRelayAgent__RelayUrl`** — public base URL of the relay (HTTPS in production).
   - **`SignRelayAgent__AgentToken`** — must match **`SignRelay__AgentToken`** on the server.
-  - **`SignRelayAgent__SignToolPath`** — full path to `signtool.exe` from the Windows SDK.
+  - **`SignRelayAgent__SignToolPath`** — full path to `signtool.exe` from the Windows SDK. If that file does not exist and `signtool.exe` is not on `PATH`, the agent falls back to **[wdkwhere](https://github.com/nefarius/wdkwhere)** (`wdkwhere run signtool …`), which you can install with `dotnet tool install --global Nefarius.Tools.WDKWhere` ([NuGet](https://www.nuget.org/packages/Nefarius.Tools.WDKWhere)).
   - **`SignRelayAgent__CertificateThumbprint`** — SHA1 thumbprint of the signing cert (if required by your signing workflow).
 - **Interactive session**: If unlocking the key store requires UI (smart card or password UI), the process must run in an **interactive user session** (e.g. logon startup task or tray host). A session-0 Windows Service alone may not see prompts from your existing unlock software.
 
