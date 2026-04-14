@@ -88,9 +88,18 @@ public sealed class JobService
     public async Task<LeaseResult?> TryLeaseAsync(string? agentId, CancellationToken ct)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        var pending = (int)JobStatus.Pending;
         var next = await _db.Jobs
-            .Where(j => j.Status == JobStatus.Pending && j.ExpiresUtc > DateTimeOffset.UtcNow)
-            .OrderBy(j => j.CreatedUtc)
+            .FromSqlInterpolated(
+                $"""
+                 SELECT *
+                 FROM Jobs
+                 WHERE Status = {pending} AND ExpiresUtc > {now}
+                 ORDER BY CreatedUtc
+                 LIMIT 1
+                 """)
+            .AsTracking()
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
 

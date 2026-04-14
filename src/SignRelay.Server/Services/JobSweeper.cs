@@ -1,8 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using SignRelay.Contracts;
 using SignRelay.Server.Data;
-using SignRelay.Server.Options;
 
 namespace SignRelay.Server.Services;
 
@@ -46,11 +44,17 @@ public sealed class JobSweeper : BackgroundService
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var hub = scope.ServiceProvider.GetRequiredService<JobEventHub>();
-        var opt = scope.ServiceProvider.GetRequiredService<IOptions<SignRelayOptions>>().Value;
 
         var now = DateTimeOffset.UtcNow;
+        var terminalFloor = (int)JobStatus.Succeeded;
         var expired = await db.Jobs
-            .Where(j => j.ExpiresUtc <= now && j.Status != JobStatus.Succeeded && j.Status != JobStatus.Failed && j.Status != JobStatus.TimedOut)
+            .FromSqlInterpolated(
+                $"""
+                 SELECT *
+                 FROM Jobs
+                 WHERE ExpiresUtc <= {now} AND Status < {terminalFloor}
+                 """)
+            .AsTracking()
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
