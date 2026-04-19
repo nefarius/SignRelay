@@ -1,0 +1,29 @@
+# Custom VPS: Traefik + bind-mounted ./data. Pulls a published image (no local build).
+# Private registry: docker login nefarius.azurecr.io may be required before compose up/pull.
+# Long-lived SSE (e.g. job events): raise Traefik forwarding timeouts to match max job duration.
+
+services:
+  signrelay:
+    image: nefarius.azurecr.io/signrelay:latest
+    environment:
+      TZ: Europe/Vienna
+      ASPNETCORE_ENVIRONMENT: Production
+      SignRelay__StoragePath: /data
+      SignRelay__CiToken: ${SIGN_RELAY_CI_TOKEN:?set SIGN_RELAY_CI_TOKEN}
+      SignRelay__AgentToken: ${SIGN_RELAY_AGENT_TOKEN:?set SIGN_RELAY_AGENT_TOKEN}
+    volumes:
+      - ./data:/data
+    networks:
+      - web
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.signrelay.rule=Host(`${SIGNRELAY_TRAEFIK_HOST:?set SIGNRELAY_TRAEFIK_HOST}`)"
+      - traefik.http.routers.signrelay.entrypoints=web-secure
+      - traefik.http.routers.signrelay.tls=true
+      - traefik.http.routers.signrelay.tls.certresolver=le
+      - traefik.http.services.signrelay.loadbalancer.server.port=8080
+
+networks:
+  web:
+    external: true
