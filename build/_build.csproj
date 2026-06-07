@@ -5,6 +5,8 @@
     <NoWarn>CS0649;CS0169;CS8981</NoWarn>
     <!-- NUKE transitive Microsoft.Build advisories until upstream bumps -->
     <NuGetAudit>false</NuGetAudit>
+    <!-- Opt out of Central Package Management — NUKE pins its own version -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <NukeRootDirectory>..</NukeRootDirectory>
     <NukeScriptDirectory>..</NukeScriptDirectory>
     <RootNamespace></RootNamespace>

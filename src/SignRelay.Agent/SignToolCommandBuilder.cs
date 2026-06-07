@@ -3,11 +3,20 @@ namespace SignRelay.Agent;
 /// <summary>Builds signtool / wdkwhere argv and resolves the executable (shared by in-process and interactive signing).</summary>
 public static class SignToolCommandBuilder
 {
+    /// <summary>
+    /// Flags that the remote manifest is NOT allowed to supply. These control certificate selection,
+    /// credential material, or signing identity and must only be configured on the agent side.
+    /// </summary>
+    private static readonly HashSet<string> DeniedFlags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/f", "/p", "/csp", "/kc", "/ph", "/ac", "/r", "/s", "/sm", "/u", "/uw"
+    };
+
     public static List<string> BuildSignArguments(
         string filePath,
         string? thumbprint,
         string? timestampUrl,
-        string? extraArgs)
+        string[]? extraArgs)
     {
         var signArgs = new List<string> { "sign", "/v", "/fd", "sha256" };
 
@@ -25,8 +34,27 @@ public static class SignToolCommandBuilder
             signArgs.Add("sha256");
         }
 
-        if (!string.IsNullOrWhiteSpace(extraArgs))
-            signArgs.AddRange(extraArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        if (extraArgs is { Length: > 0 })
+        {
+            foreach (var arg in extraArgs)
+            {
+                if (string.IsNullOrWhiteSpace(arg))
+                    continue;
+
+                // Enforce the allowlist: reject flag tokens (starting with / or -)
+                // that are in the denied set
+                var flagPart = arg.Contains(':', StringComparison.Ordinal)
+                    ? arg[..arg.IndexOf(':', StringComparison.Ordinal)]
+                    : arg;
+                if (DeniedFlags.Contains(flagPart))
+                {
+                    // Silently skip disallowed flags — operator config on agent side handles these
+                    continue;
+                }
+
+                signArgs.Add(arg);
+            }
+        }
 
         signArgs.Add(filePath);
         return signArgs;
@@ -42,11 +70,20 @@ public static class SignToolCommandBuilder
             return true;
         }
 
-        if (TryResolveWdkWhere(out var wdkExe))
+        if (TryResolveWdkWhere(out var wdkExe, out var wdkNeedsCmd))
         {
-            executable = wdkExe;
-            argv = new List<string> { "run", "signtool" };
-            argv.AddRange(signArgs);
+            if (wdkNeedsCmd)
+            {
+                executable = "cmd.exe";
+                argv = ["/c", wdkExe, "run", "signtool"];
+                argv.AddRange(signArgs);
+            }
+            else
+            {
+                executable = wdkExe;
+                argv = new List<string> { "run", "signtool" };
+                argv.AddRange(signArgs);
+            }
             return true;
         }
 
@@ -79,20 +116,29 @@ public static class SignToolCommandBuilder
         return false;
     }
 
-    /// <summary>Resolves wdkwhere shim (see https://github.com/nefarius/wdkwhere).</summary>
-    public static bool TryResolveWdkWhere(out string path)
+    /// <summary>Resolves wdkwhere shim (see https://github.com/nefarius/wdkwhere). Returns whether cmd.exe /c is required.</summary>
+    public static bool TryResolveWdkWhere(out string path, out bool requiresCmd)
     {
-        foreach (var name in new[] { "wdkwhere.exe", "wdkwhere.cmd", "wdkwhere" })
+        // Prefer .exe — CreateProcess can run it directly
+        var exe = FindOnPath("wdkwhere.exe");
+        if (exe is not null)
         {
-            var found = FindOnPath(name);
-            if (found is not null)
-            {
-                path = found;
-                return true;
-            }
+            path = exe;
+            requiresCmd = false;
+            return true;
+        }
+
+        // .cmd batch files require cmd.exe /c to execute
+        var cmd = FindOnPath("wdkwhere.cmd");
+        if (cmd is not null)
+        {
+            path = cmd;
+            requiresCmd = true;
+            return true;
         }
 
         path = "";
+        requiresCmd = false;
         return false;
     }
 

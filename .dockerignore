@@ -1,0 +1,43 @@
+# Source control
+.git/
+.github/
+
+# IDE files
+.idea/
+.vs/
+.vscode/
+*.user
+
+# Build outputs (not needed in image; the Dockerfile does a fresh dotnet publish)
+**/bin/
+**/obj/
+
+# NUKE
+.nuke/temp/
+artifacts/
+
+# Runtime data and databases
+data/
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite
+
+# NuGet packs
+**/nupkg/
+**/*.nupkg
+**/*.snupkg
+
+# Secrets / local overrides
+.env
+appsettings.*.local.json
+
+# Docs and misc
+docs/
+*.md
+*.ps1
+*.sh
+build/
+SignRelay.sln
+SignRelay.slnx
+global.json

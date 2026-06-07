@@ -22,7 +22,7 @@ public sealed class SignToolRunner
         _log = log;
     }
 
-    public async Task<int> SignAsync(string signToolPath, string filePath, string? thumbprint, string? timestampUrl, string? extraArgs, CancellationToken ct)
+    public async Task<int> SignAsync(string signToolPath, string filePath, string? thumbprint, string? timestampUrl, string[]? extraArgs, CancellationToken ct)
     {
         var signArgs = SignToolCommandBuilder.BuildSignArguments(filePath, thumbprint, timestampUrl, extraArgs);
 
@@ -58,10 +58,25 @@ public sealed class SignToolRunner
             .ExecuteBufferedAsync(ct)
             .ConfigureAwait(false);
 
+        // Log exit code + truncated, sanitized output. Avoid verbose stdout/stderr that may
+        // contain certificate details or password-related error text.
+        _log.LogInformation("signtool exited {ExitCode}.", result.ExitCode);
+
         if (!string.IsNullOrWhiteSpace(result.StandardOutput))
-            _log.LogInformation("{Out}", result.StandardOutput.Trim());
+        {
+            var out2 = result.StandardOutput.Trim();
+            if (out2.Length > 512)
+                out2 = out2[..512] + "…";
+            _log.LogInformation("signtool stdout: {Out}", out2);
+        }
+
         if (!string.IsNullOrWhiteSpace(result.StandardError))
-            _log.LogWarning("{Err}", result.StandardError.Trim());
+        {
+            var err = result.StandardError.Trim();
+            if (err.Length > 512)
+                err = err[..512] + "…";
+            _log.LogWarning("signtool stderr: {Err}", err);
+        }
 
         return result.ExitCode;
     }

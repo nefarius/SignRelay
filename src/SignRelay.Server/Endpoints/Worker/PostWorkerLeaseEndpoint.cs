@@ -32,7 +32,9 @@ public sealed class PostWorkerLeaseEndpoint : Endpoint<WorkerLeaseRequest, Lease
                 {
                     JobId = lease.JobId,
                     Manifest = lease.Manifest,
-                    UnsignedDownloadPaths = lease.UnsignedDownloadPaths
+                    UnsignedDownloadPaths = lease.UnsignedDownloadPaths,
+                    LeaseToken = lease.PlainLeaseToken,
+                    LeaseExpiresUtc = lease.LeaseExpiresUtc
                 },
                 ct)
             .ConfigureAwait(false);

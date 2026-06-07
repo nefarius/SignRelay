@@ -1,8 +1,8 @@
 using System.Text.Json;
 using FastEndpoints;
 using SignRelay.Contracts;
-using SignRelay.Server.Auth;
 using SignRelay.Server.Api;
+using SignRelay.Server.Auth;
 using SignRelay.Server.Services;
 
 namespace SignRelay.Server.Api.Ci;
@@ -35,25 +35,31 @@ public sealed class GetJobEventsEndpoint : EndpointWithoutRequest
             return;
         }
 
-        var job = await _jobs.GetJobAsync(id, ct).ConfigureAwait(false);
-        if (job is null)
-        {
-            await Send.NotFoundAsync(ct).ConfigureAwait(false);
-            return;
-        }
-
-        HttpContext.Response.StatusCode = 200;
-        HttpContext.Response.ContentType = "text/event-stream";
-        HttpContext.Response.Headers.CacheControl = "no-cache";
-        HttpContext.Response.Headers.Append("X-Accel-Buffering", "no");
-
+        // Subscribe BEFORE reading current state to eliminate the race where a transition
+        // occurs between the DB read and the channel subscribe.
         var subscription = _hub.Subscribe(id);
         try
         {
+            var job = await _jobs.GetJobAsync(id, ct).ConfigureAwait(false);
+            if (job is null)
+            {
+                subscription.Dispose();
+                await Send.NotFoundAsync(ct).ConfigureAwait(false);
+                return;
+            }
+
+            HttpContext.Response.StatusCode = 200;
+            HttpContext.Response.ContentType = "text/event-stream";
+            HttpContext.Response.Headers.CacheControl = "no-cache";
+            HttpContext.Response.Headers.Append("X-Accel-Buffering", "no");
+
+            // Emit the current snapshot first
             await EmitAsync(_jobs.ToPayload(job), ct).ConfigureAwait(false);
             if (IsTerminal(job.Status))
                 return;
 
+            // Drain any events that were buffered while we were fetching (the subscribe-before-read fix)
+            // then continue reading live events
             await foreach (var ev in subscription.Reader.ReadAllAsync(ct))
             {
                 await EmitAsync(ev, ct).ConfigureAwait(false);

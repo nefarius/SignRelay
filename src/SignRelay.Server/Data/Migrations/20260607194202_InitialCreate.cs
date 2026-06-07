@@ -24,6 +24,9 @@ namespace SignRelay.Server.Data.Migrations
                     TotalUnsignedBytes = table.Column<long>(type: "INTEGER", nullable: false),
                     LeaseAgentId = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     LeasedUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    LeaseTokenHash = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
+                    LeaseExpiresUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    LeaseAttempts = table.Column<int>(type: "INTEGER", nullable: false),
                     ErrorMessage = table.Column<string>(type: "TEXT", maxLength: 16000, nullable: true),
                     CompletedUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true)
                 },
@@ -40,12 +43,18 @@ namespace SignRelay.Server.Data.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Jobs_JobTokenHash",
                 table: "Jobs",
-                column: "JobTokenHash");
+                column: "JobTokenHash",
+                unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Jobs_Status",
+                name: "IX_Jobs_LeaseTokenHash",
                 table: "Jobs",
-                column: "Status");
+                column: "LeaseTokenHash");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Jobs_Status_ExpiresUtc",
+                table: "Jobs",
+                columns: new[] { "Status", "ExpiresUtc" });
         }
 
         /// <inheritdoc />

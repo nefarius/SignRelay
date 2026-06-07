@@ -1,8 +1,8 @@
 using System.Text.Json;
 using FastEndpoints;
 using SignRelay.Contracts;
-using SignRelay.Server.Auth;
 using SignRelay.Server.Api;
+using SignRelay.Server.Auth;
 using SignRelay.Server.Services;
 
 namespace SignRelay.Server.Api.Ci;
@@ -52,7 +52,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
             return;
         }
 
-        if (manifest is null || manifest.Files.Count == 0)
+        if (manifest?.Files is not { Count: > 0 })
         {
             AddError("Manifest must contain at least one file entry.");
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
@@ -96,13 +96,23 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
                     ct)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             foreach (var (_, s, _) in inputs)
                 await s.DisposeAsync().ConfigureAwait(false);
 
+            // Validation / business errors are 400
             AddError(ex.Message);
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            foreach (var (_, s, _) in inputs)
+                await s.DisposeAsync().ConfigureAwait(false);
+
+            // Infrastructure failures are 500 with a generic message
+            AddError("An internal error occurred. Please try again.");
+            await Send.ErrorsAsync(500, ct).ConfigureAwait(false);
         }
     }
 }

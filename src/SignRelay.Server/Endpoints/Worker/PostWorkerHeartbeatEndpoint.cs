@@ -1,25 +1,28 @@
 using System.Security.Claims;
 using FastEndpoints;
-using SignRelay.Contracts;
 using SignRelay.Server.Auth;
 using SignRelay.Server.Services;
 
 namespace SignRelay.Server.Api.Worker;
 
-public sealed class PostWorkerFailEndpoint : Endpoint<WorkerFailRequest>
+/// <summary>
+/// Extends the lease expiry for the calling agent's job. The agent should call this periodically
+/// (e.g. between signing individual files) to prevent the sweeper from requeuing a slow job.
+/// </summary>
+public sealed class PostWorkerHeartbeatEndpoint : EndpointWithoutRequest
 {
     private readonly JobService _jobs;
 
-    public PostWorkerFailEndpoint(JobService jobs) => _jobs = jobs;
+    public PostWorkerHeartbeatEndpoint(JobService jobs) => _jobs = jobs;
 
     public override void Configure()
     {
-        Post($"{SignRelay.Contracts.ApiRoutes.Prefix}/worker/jobs/{{jobId}}/fail");
+        Post($"{SignRelay.Contracts.ApiRoutes.Prefix}/worker/jobs/{{jobId}}/heartbeat");
         AuthSchemes(SignRelayAuthenticationHandler.SchemeName);
         Policies("Lease");
     }
 
-    public override async Task HandleAsync(WorkerFailRequest req, CancellationToken ct)
+    public override async Task HandleAsync(CancellationToken ct)
     {
         var jobId = Route<string>("jobId")!;
         var claimedJobId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -29,7 +32,7 @@ public sealed class PostWorkerFailEndpoint : Endpoint<WorkerFailRequest>
             return;
         }
 
-        await _jobs.FailJobAsync(jobId, req.Error, ct).ConfigureAwait(false);
+        await _jobs.ExtendLeaseAsync(jobId, ct).ConfigureAwait(false);
         await Send.OkAsync(ct).ConfigureAwait(false);
     }
 }

@@ -2,6 +2,7 @@ using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Sinks.SystemConsole.Themes;
 using SignRelay.Contracts;
@@ -32,6 +33,8 @@ try
         ForwardedHeadersConfiguration.Apply(builder.Configuration, options));
 
     builder.Services.Configure<SignRelayOptions>(builder.Configuration.GetSection(SignRelayOptions.SectionName));
+    builder.Services.AddSingleton<IValidateOptions<SignRelayOptions>, SignRelayOptionsValidator>();
+
     builder.Services.AddDbContext<AppDbContext>(o =>
     {
         var dataDir = builder.Configuration.GetValue<string>("SignRelay:StoragePath") ?? "data";
@@ -54,12 +57,26 @@ try
     {
         o.AddPolicy("Ci", p => p.RequireClaim(SignRelayClaimTypes.Role, SignRelayClaimTypes.Ci));
         o.AddPolicy("Agent", p => p.RequireClaim(SignRelayClaimTypes.Role, SignRelayClaimTypes.Agent));
+        o.AddPolicy("Lease", p => p.RequireClaim(SignRelayClaimTypes.Role, SignRelayClaimTypes.Lease));
     });
 
     builder.Services.AddFastEndpoints();
-    builder.Services.SwaggerDocument();
+    builder.Services.AddHealthChecks();
+
+    if (builder.Environment.IsDevelopment())
+        builder.Services.SwaggerDocument();
+
+    // Kestrel request body size limit for uploads (applies globally; individual endpoints can override)
+    builder.WebHost.ConfigureKestrel(k =>
+    {
+        // Server's MaxTotalJobBytes default is 512 MB; allow double that for signed uploads
+        k.Limits.MaxRequestBodySize = 1_073_741_824; // 1 GiB hard cap
+    });
 
     var app = builder.Build();
+
+    // Validate options at startup — fails fast on bad configuration
+    app.Services.GetRequiredService<IOptions<SignRelayOptions>>().Value.ToString();
 
     await using (var scope = app.Services.CreateAsyncScope())
     {
@@ -84,7 +101,10 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseFastEndpoints();
-    app.UseSwaggerGen();
+    app.MapHealthChecks("/health");
+
+    if (app.Environment.IsDevelopment())
+        app.UseSwaggerGen();
 
     app.Run();
 }
