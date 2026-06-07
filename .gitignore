@@ -390,6 +390,22 @@ MSBuild_Logs/
 # BeatPulse healthcheck temp database
 healthchecksdb
 
+# SQLite runtime databases (server creates these on startup)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# Runtime data directories
+/data/
+**/nupkg/
+
+# JetBrains Rider / IntelliJ
+.idea/
+
+# Local appsettings overrides
+appsettings.*.local.json
+
 # Backup folder for Package Reference Convert tool in Visual Studio 2017
 MigrationBackup/
 

@@ -11,14 +11,14 @@ using SignRelay.Server.Data;
 namespace SignRelay.Server.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260413171117_InitialCreate")]
+    [Migration("20260607194202_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
 
             modelBuilder.Entity("SignRelay.Server.Data.JobEntity", b =>
                 {
@@ -48,6 +48,16 @@ namespace SignRelay.Server.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("LeaseAttempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LeaseTokenHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("LeasedUtc")
                         .HasColumnType("TEXT");
 
@@ -66,9 +76,12 @@ namespace SignRelay.Server.Data.Migrations
 
                     b.HasIndex("CreatedUtc");
 
-                    b.HasIndex("JobTokenHash");
+                    b.HasIndex("JobTokenHash")
+                        .IsUnique();
 
-                    b.HasIndex("Status");
+                    b.HasIndex("LeaseTokenHash");
+
+                    b.HasIndex("Status", "ExpiresUtc");
 
                     b.ToTable("Jobs");
                 });

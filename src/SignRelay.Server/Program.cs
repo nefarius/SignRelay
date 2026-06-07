@@ -2,6 +2,7 @@ using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Sinks.SystemConsole.Themes;
 using SignRelay.Contracts;
@@ -31,7 +32,12 @@ try
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
         ForwardedHeadersConfiguration.Apply(builder.Configuration, options));
 
-    builder.Services.Configure<SignRelayOptions>(builder.Configuration.GetSection(SignRelayOptions.SectionName));
+    builder.Services
+        .AddOptions<SignRelayOptions>()
+        .Bind(builder.Configuration.GetSection(SignRelayOptions.SectionName))
+        .ValidateOnStart();
+    builder.Services.AddSingleton<IValidateOptions<SignRelayOptions>, SignRelayOptionsValidator>();
+
     builder.Services.AddDbContext<AppDbContext>(o =>
     {
         var dataDir = builder.Configuration.GetValue<string>("SignRelay:StoragePath") ?? "data";
@@ -54,10 +60,24 @@ try
     {
         o.AddPolicy("Ci", p => p.RequireClaim(SignRelayClaimTypes.Role, SignRelayClaimTypes.Ci));
         o.AddPolicy("Agent", p => p.RequireClaim(SignRelayClaimTypes.Role, SignRelayClaimTypes.Agent));
+        o.AddPolicy("Lease", p => p.RequireClaim(SignRelayClaimTypes.Role, SignRelayClaimTypes.Lease));
     });
 
     builder.Services.AddFastEndpoints();
-    builder.Services.SwaggerDocument();
+    builder.Services.AddHealthChecks();
+
+    if (builder.Environment.IsDevelopment())
+        builder.Services.SwaggerDocument();
+
+    // Kestrel request body size limit — derived from MaxTotalJobBytes (×2 to cover signed uploads)
+    // so the Kestrel cap and the service-layer validation never drift apart.
+    builder.WebHost.ConfigureKestrel((ctx, k) =>
+    {
+        var maxBytes = ctx.Configuration
+            .GetSection(SignRelayOptions.SectionName)
+            .GetValue<long>("MaxTotalJobBytes", 512L * 1024 * 1024);
+        k.Limits.MaxRequestBodySize = maxBytes * 2;
+    });
 
     var app = builder.Build();
 
@@ -84,7 +104,10 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseFastEndpoints();
-    app.UseSwaggerGen();
+    app.MapHealthChecks("/health");
+
+    if (app.Environment.IsDevelopment())
+        app.UseSwaggerGen();
 
     app.Run();
 }

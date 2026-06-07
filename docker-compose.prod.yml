@@ -16,6 +16,12 @@ services:
     networks:
       - web
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
     labels:
       - traefik.enable=true
       - "traefik.http.routers.signrelay.rule=Host(`${SIGNRELAY_TRAEFIK_HOST:?set SIGNRELAY_TRAEFIK_HOST}`)"

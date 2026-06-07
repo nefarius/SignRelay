@@ -26,10 +26,29 @@ public sealed class JobService
 
     public string JobsRoot => Path.GetFullPath(_opt.StoragePath);
 
-    public async Task<(JobEntity Job, string PlainJobToken)> CreateJobAsync(JobManifestDto manifest, IReadOnlyList<(string RelativePath, Stream Content, long Length)> files, CancellationToken ct)
+    public async Task<(JobEntity Job, string PlainJobToken)> CreateJobAsync(
+        JobManifestDto manifest,
+        IReadOnlyList<(string RelativePath, Stream Content, long Length)> files,
+        CancellationToken ct)
     {
+        if (manifest.Files is not { Count: > 0 })
+            throw new InvalidOperationException("Manifest must contain at least one file entry.");
+
         if (manifest.Files.Count != files.Count)
             throw new InvalidOperationException("Manifest file count does not match uploaded files.");
+
+        // Validate and normalise all relative paths before touching the DB or disk
+        var normalizedPaths = new List<string>(manifest.Files.Count);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < manifest.Files.Count; i++)
+        {
+            var rel = PathSafety.NormalizeRelativePath(manifest.Files[i].RelativePath);
+            if (!seen.Add(rel))
+                throw new InvalidOperationException($"Duplicate relative path '{rel}' in manifest.");
+            if (!string.Equals(manifest.Files[i].RelativePath, files[i].RelativePath, StringComparison.Ordinal))
+                throw new InvalidOperationException("File order and manifest paths must match.");
+            normalizedPaths.Add(rel);
+        }
 
         long total = 0;
         foreach (var f in files)
@@ -39,81 +58,131 @@ public sealed class JobService
                 throw new InvalidOperationException($"Job exceeds MaxTotalJobBytes ({_opt.MaxTotalJobBytes}).");
         }
 
-        for (var i = 0; i < manifest.Files.Count; i++)
-        {
-            PathSafety.NormalizeRelativePath(manifest.Files[i].RelativePath);
-            if (!string.Equals(manifest.Files[i].RelativePath, files[i].RelativePath, StringComparison.Ordinal))
-                throw new InvalidOperationException("File order and manifest paths must match.");
-        }
-
         var id = Guid.NewGuid().ToString("N");
-        var jobToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()) + Convert.ToHexString(Guid.NewGuid().ToByteArray());
-        var tokenHash = CryptoUtil.Sha256Hex(jobToken);
-        var now = DateTimeOffset.UtcNow;
-        var entity = new JobEntity
+        var stagingRoot = Path.Combine(JobsRoot, "staging", id, "unsigned");
+        var finalRoot = Path.Combine(JobsRoot, "jobs", id, "unsigned");
+
+        // Write files to a staging directory BEFORE inserting the DB row.
+        // On any failure, the staging dir is cleaned up and no DB record is created.
+        Directory.CreateDirectory(stagingRoot);
+        try
         {
-            Id = id,
-            Status = JobStatus.Pending,
-            CreatedUtc = now,
-            ExpiresUtc = now.Add(_opt.JobTimeToLive),
-            JobTokenHash = tokenHash,
-            ManifestJson = JsonSerializer.Serialize(manifest, Json),
-            TotalUnsignedBytes = total
-        };
-
-        _db.Jobs.Add(entity);
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-        var root = Path.Combine(JobsRoot, "jobs", id, "unsigned");
-        Directory.CreateDirectory(root);
-
-        for (var i = 0; i < files.Count; i++)
-        {
-            var rel = PathSafety.NormalizeRelativePath(files[i].RelativePath);
-            var dest = Path.Combine(root, rel);
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            await using (var fs = File.Create(dest))
+            for (var i = 0; i < files.Count; i++)
             {
-                await files[i].Content.CopyToAsync(fs, ct).ConfigureAwait(false);
+                var dest = Path.GetFullPath(Path.Combine(stagingRoot, normalizedPaths[i]));
+                if (!PathSafety.IsUnderRoot(dest, stagingRoot))
+                    throw new InvalidOperationException($"Path escape detected for '{normalizedPaths[i]}'.");
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                await using (var fs = File.Create(dest))
+                {
+                    await files[i].Content.CopyToAsync(fs, ct).ConfigureAwait(false);
+                }
+
+                if (files[i].Content.CanSeek)
+                    files[i].Content.Position = 0;
             }
 
-            if (files[i].Content.CanSeek)
-                files[i].Content.Position = 0;
-        }
+            // Persist the normalised manifest (canonical backslash/forward-slash form)
+            var normalizedManifest = new JobManifestDto
+            {
+                Files = manifest.Files.Select((f, i) => new JobFileEntry
+                {
+                    RelativePath = normalizedPaths[i],
+                    SignToolExtraArgs = f.SignToolExtraArgs
+                }).ToList()
+            };
 
-        _hub.Publish(id, new JobEventPayload { Type = "status", Status = JobStatus.Pending, Error = null });
-        return (entity, jobToken);
+            var jobToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()) + Convert.ToHexString(Guid.NewGuid().ToByteArray());
+            var tokenHash = CryptoUtil.Sha256Hex(jobToken);
+            var now = DateTimeOffset.UtcNow;
+            var entity = new JobEntity
+            {
+                Id = id,
+                Status = JobStatus.Pending,
+                CreatedUtc = now,
+                ExpiresUtc = now.Add(_opt.JobTimeToLive),
+                JobTokenHash = tokenHash,
+                ManifestJson = JsonSerializer.Serialize(normalizedManifest, Json),
+                TotalUnsignedBytes = total
+            };
+
+            // Promote files BEFORE inserting the DB row so that a failed Directory.Move
+            // never leaves an orphaned Pending record pointing at a missing directory.
+            Directory.CreateDirectory(Path.GetDirectoryName(finalRoot)!);
+            Directory.Move(stagingRoot, finalRoot);
+
+            // Optionally clean up the now-empty parent staging dir
+            var stagingParent = Path.GetDirectoryName(stagingRoot)!;
+            if (Directory.Exists(stagingParent))
+                TrySilentDelete(stagingParent, recursive: false);
+
+            _db.Jobs.Add(entity);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            _hub.Publish(id, new JobEventPayload { Type = "status", Status = JobStatus.Pending, Error = null });
+            return (entity, jobToken);
+        }
+        catch
+        {
+            // On any failure: clean up both the staging dir (pre-move) and the final dir
+            // (post-move) so no orphaned files remain regardless of where we failed.
+            TrySilentDelete(Path.GetDirectoryName(stagingRoot)!, recursive: true);
+            TrySilentDelete(Path.GetDirectoryName(finalRoot)!, recursive: true);
+            throw;
+        }
     }
 
     public async Task<LeaseResult?> TryLeaseAsync(string? agentId, CancellationToken ct)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
+        var leaseExpiry = now.Add(_opt.LeaseDuration);
         var pending = (int)JobStatus.Pending;
-        var next = await _db.Jobs
-            .FromSqlInterpolated(
-                $"""
-                 SELECT *
-                 FROM Jobs
-                 WHERE Status = {pending} AND ExpiresUtc > {now}
+
+        // Mint a lease token before the DB call so we never commit without it
+        var plainLeaseToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()) + Convert.ToHexString(Guid.NewGuid().ToByteArray());
+        var leaseTokenHash = CryptoUtil.Sha256Hex(plainLeaseToken);
+
+        // Atomic UPDATE: only one concurrent caller can flip a Pending row to Leased.
+        // SQLite's UPDATE…WHERE is serialised by WAL; the RETURNING clause gives us the
+        // chosen row's Id without a separate SELECT.
+        var updated = await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+             UPDATE Jobs
+             SET Status         = {(int)JobStatus.Leased},
+                 LeasedUtc      = {now},
+                 LeaseAgentId   = {agentId},
+                 LeaseTokenHash = {leaseTokenHash},
+                 LeaseExpiresUtc = {leaseExpiry},
+                 LeaseAttempts  = LeaseAttempts + 1
+             WHERE Id = (
+                 SELECT Id FROM Jobs
+                 WHERE Status = {pending}
+                   AND ExpiresUtc > {now}
+                   AND LeaseAttempts < {_opt.MaxLeaseAttempts}
                  ORDER BY CreatedUtc
                  LIMIT 1
-                 """)
-            .AsTracking()
-            .FirstOrDefaultAsync(ct)
+             )
+             """,
+            ct).ConfigureAwait(false);
+
+        if (updated == 0)
+            return null;
+
+        // The raw SQL update bypassed EF tracking — clear stale tracked entities so that
+        // subsequent FirstOrDefaultAsync calls in this request always see fresh data.
+        _db.ChangeTracker.Clear();
+
+        // Fetch the row we just leased (the one with our leaseTokenHash)
+        var next = await _db.Jobs.AsNoTracking()
+            .FirstOrDefaultAsync(j => j.LeaseTokenHash == leaseTokenHash, ct)
             .ConfigureAwait(false);
 
         if (next is null)
         {
-            await tx.CommitAsync(ct).ConfigureAwait(false);
+            // Should not happen; defensive fallback
+            _log.LogWarning("Lease was recorded but the row could not be found (hash: {Hash}).", leaseTokenHash);
             return null;
         }
-
-        next.Status = JobStatus.Leased;
-        next.LeasedUtc = DateTimeOffset.UtcNow;
-        next.LeaseAgentId = agentId;
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        await tx.CommitAsync(ct).ConfigureAwait(false);
 
         var manifest = JsonSerializer.Deserialize<JobManifestDto>(next.ManifestJson, Json);
         if (manifest is null)
@@ -125,12 +194,11 @@ public sealed class JobService
         var paths = manifest.Files.Select(f => ApiRoutes.WorkerUnsigned(next.Id, f.RelativePath)).ToList();
         _hub.Publish(next.Id, new JobEventPayload { Type = "status", Status = JobStatus.Leased, Error = null });
 
-        return new LeaseResult(next.Id, manifest, paths);
+        return new LeaseResult(next.Id, manifest, paths, plainLeaseToken, leaseExpiry);
     }
 
     public async Task<Stream?> OpenUnsignedAsync(string jobId, string relativePath, CancellationToken ct)
     {
-        PathSafety.NormalizeRelativePath(relativePath);
         var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
         if (job is null)
             return null;
@@ -140,7 +208,7 @@ public sealed class JobService
         var rel = PathSafety.NormalizeRelativePath(relativePath);
         var root = Path.GetFullPath(Path.Combine(JobsRoot, "jobs", jobId, "unsigned"));
         var path = Path.GetFullPath(Path.Combine(root, rel));
-        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        if (!PathSafety.IsUnderRoot(path, root))
             return null;
         if (!File.Exists(path))
             return null;
@@ -156,32 +224,57 @@ public sealed class JobService
         if (job.Status is not (JobStatus.Leased or JobStatus.Signing))
             throw new InvalidOperationException("Job is not in a signable state.");
 
-        job.Status = JobStatus.Signing;
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-
         var manifest = JsonSerializer.Deserialize<JobManifestDto>(job.ManifestJson, Json)
                        ?? throw new InvalidOperationException("Invalid manifest.");
 
         if (orderedSignedFiles.Count != manifest.Files.Count)
             throw new InvalidOperationException("Signed file count does not match manifest.");
 
+        // Validate total upload size against original job size (rough bound)
+        long uploadTotal = orderedSignedFiles.Sum(f => f.Length);
+        if (uploadTotal == 0 || uploadTotal > _opt.MaxTotalJobBytes * 2)
+            throw new InvalidOperationException("Signed upload size is out of expected range.");
+
+        job.Status = JobStatus.Signing;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
         var signedRoot = Path.Combine(JobsRoot, "jobs", jobId, "signed");
         Directory.CreateDirectory(signedRoot);
 
-        for (var i = 0; i < manifest.Files.Count; i++)
+        var tmpFiles = new List<string>();
+        try
         {
-            var entry = manifest.Files[i];
-            var form = orderedSignedFiles[i];
-            if (form.Length == 0)
-                throw new InvalidOperationException($"Missing signed file for '{entry.RelativePath}'.");
-
-            var rel = PathSafety.NormalizeRelativePath(entry.RelativePath);
-            var dest = Path.Combine(signedRoot, rel);
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            await using (var fs = File.Create(dest))
+            for (var i = 0; i < manifest.Files.Count; i++)
             {
-                await form.CopyToAsync(fs, ct).ConfigureAwait(false);
+                var entry = manifest.Files[i];
+                var form = orderedSignedFiles[i];
+                if (form.Length == 0)
+                    throw new InvalidOperationException($"Missing signed file for '{entry.RelativePath}'.");
+
+                var rel = PathSafety.NormalizeRelativePath(entry.RelativePath);
+                var dest = Path.GetFullPath(Path.Combine(signedRoot, rel));
+                if (!PathSafety.IsUnderRoot(dest, signedRoot))
+                    throw new InvalidOperationException($"Path escape detected for '{rel}'.");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+
+                // Write to a temp file first; atomically promote on success so CompleteJobAsync's
+                // File.Exists check can trust that a present file is complete.
+                var tmpPath = dest + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                tmpFiles.Add(tmpPath);
+                await using (var fs = File.Create(tmpPath))
+                {
+                    await form.CopyToAsync(fs, ct).ConfigureAwait(false);
+                }
+                File.Move(tmpPath, dest, overwrite: true);
+                tmpFiles.RemoveAt(tmpFiles.Count - 1); // committed — no longer needs cleanup
             }
+        }
+        catch
+        {
+            foreach (var tmp in tmpFiles)
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            throw;
         }
 
         _hub.Publish(jobId, new JobEventPayload { Type = "status", Status = JobStatus.Signing, Error = null });
@@ -210,6 +303,8 @@ public sealed class JobService
         job.Status = JobStatus.Succeeded;
         job.CompletedUtc = DateTimeOffset.UtcNow;
         job.ErrorMessage = null;
+        // Clear lease token so it can no longer be used
+        job.LeaseTokenHash = null;
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Succeeded, Error = null });
@@ -222,13 +317,30 @@ public sealed class JobService
         if (job is null)
             return;
 
+        // Only transition from non-terminal states
+        if (job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.TimedOut)
+            return;
+
+        var truncated = error.Length > 16_000 ? error[..16_000] : error;
+
         job.Status = JobStatus.Failed;
         job.CompletedUtc = DateTimeOffset.UtcNow;
-        job.ErrorMessage = error;
+        job.ErrorMessage = truncated;
+        job.LeaseTokenHash = null;
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = error });
-        _log.LogWarning("Job {JobId} failed: {Error}", jobId, error);
+        _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = truncated });
+        _log.LogWarning("Job {JobId} failed: {Error}", jobId, truncated);
+    }
+
+    public async Task ExtendLeaseAsync(string jobId, CancellationToken ct)
+    {
+        var job = await _db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
+        if (job is null || job.Status is not (JobStatus.Leased or JobStatus.Signing))
+            return;
+
+        job.LeaseExpiresUtc = DateTimeOffset.UtcNow.Add(_opt.LeaseDuration);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
     public async Task<JobEntity?> GetJobAsync(string jobId, CancellationToken ct) =>
@@ -236,7 +348,6 @@ public sealed class JobService
 
     public async Task<Stream?> OpenSignedAsync(string jobId, string relativePath, CancellationToken ct)
     {
-        PathSafety.NormalizeRelativePath(relativePath);
         var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
         if (job is null || job.Status != JobStatus.Succeeded)
             return null;
@@ -244,11 +355,14 @@ public sealed class JobService
         var rel = PathSafety.NormalizeRelativePath(relativePath);
         var root = Path.GetFullPath(Path.Combine(JobsRoot, "jobs", jobId, "signed"));
         var path = Path.GetFullPath(Path.Combine(root, rel));
-        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        if (!PathSafety.IsUnderRoot(path, root))
             return null;
 
         return File.Exists(path) ? File.OpenRead(path) : null;
     }
+
+    public string GetJobArtifactDirectory(string jobId) =>
+        Path.GetFullPath(Path.Combine(JobsRoot, "jobs", jobId));
 
     public JobEventPayload ToPayload(JobEntity j) =>
         new()
@@ -257,6 +371,24 @@ public sealed class JobService
             Status = j.Status,
             Error = j.ErrorMessage
         };
+
+    private static void TrySilentDelete(string path, bool recursive)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive);
+        }
+        catch
+        {
+            // best-effort
+        }
+    }
 }
 
-public sealed record LeaseResult(string JobId, JobManifestDto Manifest, IReadOnlyList<string> UnsignedDownloadPaths);
+public sealed record LeaseResult(
+    string JobId,
+    JobManifestDto Manifest,
+    IReadOnlyList<string> UnsignedDownloadPaths,
+    string PlainLeaseToken,
+    DateTimeOffset LeaseExpiresUtc);

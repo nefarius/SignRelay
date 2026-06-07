@@ -6,17 +6,24 @@ services:
       # Same as NUKE DockerServer: MinVer version without copying .git into the image. Set before `docker compose build`, e.g.
       #   export MINVERVERSIONOVERRIDE=$(dotnet msbuild src/SignRelay.Server/SignRelay.Server.csproj -restore -getProperty:Version -nologo -verbosity:quiet)
       args:
-        MINVERVERSIONOVERRIDE: ${MINVERVERSIONOVERRIDE:-}
+        MINVERVERSIONOVERRIDE: ${MINVERVERSIONOVERRIDE:?set MINVERVERSIONOVERRIDE before building}
+    # Bind to localhost only for local dev; remove 127.0.0.1: if you need LAN access
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_ENVIRONMENT: Development
       SignRelay__StoragePath: /data
       SignRelay__CiToken: ${SIGN_RELAY_CI_TOKEN:?set SIGN_RELAY_CI_TOKEN}
       SignRelay__AgentToken: ${SIGN_RELAY_AGENT_TOKEN:?set SIGN_RELAY_AGENT_TOKEN}
     volumes:
       - signrelay-data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
 
 volumes:
   signrelay-data:

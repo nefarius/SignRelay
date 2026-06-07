@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FastEndpoints;
 using SignRelay.Server.Auth;
 using SignRelay.Server.Services;
@@ -14,13 +15,20 @@ public sealed class PostWorkerSignedEndpoint : EndpointWithoutRequest
     {
         Post($"{SignRelay.Contracts.ApiRoutes.Prefix}/worker/jobs/{{jobId}}/signed");
         AuthSchemes(SignRelayAuthenticationHandler.SchemeName);
-        Policies("Agent");
+        Policies("Lease");
         AllowFileUploads();
     }
 
     public override async Task HandleAsync(CancellationToken ct)
     {
         var jobId = Route<string>("jobId")!;
+        var claimedJobId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (claimedJobId != jobId)
+        {
+            await Send.ForbiddenAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
         if (!HttpContext.Request.HasFormContentType)
         {
             AddError("Request must be multipart/form-data.");
@@ -49,8 +57,9 @@ public sealed class PostWorkerSignedEndpoint : EndpointWithoutRequest
             await _jobs.SaveSignedFilesAsync(jobId, files, ct).ConfigureAwait(false);
             await Send.OkAsync(ct).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
+            // Business-rule violations: 400, leave job in Signing for potential retry
             AddError(ex.Message);
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
         }

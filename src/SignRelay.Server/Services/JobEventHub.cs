@@ -6,21 +6,30 @@ namespace SignRelay.Server.Services;
 
 public sealed class JobEventHub
 {
+    // Bounded to prevent memory growth when a CI client is slow / stalled.
+    // DropOldest keeps the channel draining; a 64-event buffer is generous for any single job.
+    private const int ChannelCapacity = 64;
+
     private readonly ConcurrentDictionary<string, List<ChannelWriter<JobEventPayload>>> _writers = new();
 
     public JobSubscription Subscribe(string jobId)
     {
-        var channel = Channel.CreateUnbounded<JobEventPayload>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+        var channel = Channel.CreateBounded<JobEventPayload>(new BoundedChannelOptions(ChannelCapacity)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false
+        });
+
         _writers.AddOrUpdate(
             jobId,
-            _ => new List<ChannelWriter<JobEventPayload>> { channel.Writer },
+            _ => [channel.Writer],
             (_, list) =>
             {
                 lock (list)
                 {
                     list.Add(channel.Writer);
                 }
-
                 return list;
             });
 

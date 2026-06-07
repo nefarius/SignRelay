@@ -14,7 +14,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <!-- System.CommandLine is pinned to a beta release; see Directory.Packages.props -->
+    <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
 </Project>

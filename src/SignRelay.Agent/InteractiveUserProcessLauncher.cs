@@ -241,16 +241,16 @@ public sealed class InteractiveUserProcessLauncher
             CloseHandle(h);
     }
 
-    private static void TryDelete(string path)
+    private void TryDelete(string path)
     {
         try
         {
             if (File.Exists(path))
                 File.Delete(path);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            _log.LogDebug(ex, "Could not delete temp file {Path}.", path);
         }
     }
 
@@ -261,13 +261,17 @@ public sealed class InteractiveUserProcessLauncher
             if (File.Exists(outPath))
             {
                 var text = await File.ReadAllTextAsync(outPath).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(text))
-                    _log.LogInformation("{Out}", text.Trim());
+                text = text.Trim();
+                if (text.Length > 0)
+                {
+                    if (text.Length > 512) text = text[..512] + "…";
+                    _log.LogInformation("signtool (interactive) stdout: {Out}", text);
+                }
             }
         }
         catch (Exception ex)
         {
-            _log.LogWarning(ex, "Could not read stdout log.");
+            _log.LogWarning(ex, "Could not read interactive stdout log.");
         }
 
         try
@@ -275,13 +279,17 @@ public sealed class InteractiveUserProcessLauncher
             if (File.Exists(errPath))
             {
                 var text = await File.ReadAllTextAsync(errPath).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(text))
-                    _log.LogWarning("{Err}", text.Trim());
+                text = text.Trim();
+                if (text.Length > 0)
+                {
+                    if (text.Length > 512) text = text[..512] + "…";
+                    _log.LogWarning("signtool (interactive) stderr: {Err}", text);
+                }
             }
         }
         catch (Exception ex)
         {
-            _log.LogWarning(ex, "Could not read stderr log.");
+            _log.LogWarning(ex, "Could not read interactive stderr log.");
         }
     }
 
@@ -290,7 +298,13 @@ public sealed class InteractiveUserProcessLauncher
         const uint waitMs = 500;
         while (true)
         {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested)
+            {
+                // Terminate the child process before letting the cancellation bubble up
+                TerminateProcess(hProcess, exitCode: 1);
+                ct.ThrowIfCancellationRequested();
+            }
+
             var r = WaitForSingleObject(hProcess, waitMs);
             if (r == WAIT_OBJECT_0)
                 return;
@@ -303,7 +317,9 @@ public sealed class InteractiveUserProcessLauncher
             if (r == WAIT_FAILED)
                 throw new Win32Exception(Marshal.GetLastWin32Error());
 
-            await Task.Delay(50, ct).ConfigureAwait(false);
+            // Unexpected status (e.g. WAIT_ABANDONED) — treat as error
+            throw new Win32Exception(Marshal.GetLastWin32Error(),
+                $"WaitForSingleObject returned unexpected status 0x{r:X8}.");
         }
     }
 
@@ -333,8 +349,16 @@ public sealed class InteractiveUserProcessLauncher
         return sb.ToString();
     }
 
-    /// <summary>Quote argv for CreateProcess (escape embedded quotes with backslash when quoting).</summary>
-    private static void AppendOneArg(StringBuilder result, string argument)
+    /// <summary>
+    /// Quotes a single argument for CreateProcess / CommandLineToArgvW.
+    /// Implements the full backslash+quote escaping rules documented in
+    /// https://learn.microsoft.com/en-us/cpp/c-language/parsing-c-command-line-arguments:
+    ///   - Backslashes are literal unless immediately preceding a quote.
+    ///   - To include a literal quote, precede it with a backslash (and double any backslashes
+    ///     that immediately precede it).
+    ///   - The closing quote must have all immediately-preceding backslashes doubled.
+    /// </summary>
+    internal static void AppendOneArg(StringBuilder result, string argument)
     {
         if (argument.Length == 0)
         {
@@ -342,15 +366,7 @@ public sealed class InteractiveUserProcessLauncher
             return;
         }
 
-        var needsQuotes = false;
-        foreach (var c in argument)
-        {
-            if (c is ' ' or '\t' or '"')
-            {
-                needsQuotes = true;
-                break;
-            }
-        }
+        var needsQuotes = argument.IndexOfAny([' ', '\t', '"']) >= 0;
 
         if (!needsQuotes)
         {
@@ -359,11 +375,38 @@ public sealed class InteractiveUserProcessLauncher
         }
 
         result.Append('"');
-        foreach (var c in argument)
+        var i = 0;
+        while (i < argument.Length)
         {
-            if (c == '"')
+            // Count a run of backslashes
+            var backslashCount = 0;
+            while (i < argument.Length && argument[i] == '\\')
+            {
+                i++;
+                backslashCount++;
+            }
+
+            if (i == argument.Length)
+            {
+                // Trailing backslashes before the closing quote: double them
+                result.Append('\\', backslashCount * 2);
+                break;
+            }
+
+            if (argument[i] == '"')
+            {
+                // Backslashes before a quote: double them, then escape the quote
+                result.Append('\\', backslashCount * 2);
                 result.Append('\\');
-            result.Append(c);
+                result.Append('"');
+            }
+            else
+            {
+                // Ordinary character: emit backslashes as-is, then the character
+                result.Append('\\', backslashCount);
+                result.Append(argument[i]);
+            }
+            i++;
         }
 
         result.Append('"');
@@ -455,6 +498,10 @@ public sealed class InteractiveUserProcessLauncher
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateProcess(IntPtr hProcess, uint exitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
