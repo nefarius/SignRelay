@@ -6,10 +6,20 @@ public static class SignToolCommandBuilder
     /// <summary>
     /// Flags that the remote manifest is NOT allowed to supply. These control certificate selection,
     /// credential material, or signing identity and must only be configured on the agent side.
+    /// Both '/' and '-' prefixes are normalised before lookup, so "-sha1" is treated as "/sha1".
     /// </summary>
     private static readonly HashSet<string> DeniedFlags = new(StringComparer.OrdinalIgnoreCase)
     {
-        "/f", "/p", "/csp", "/kc", "/ph", "/ac", "/r", "/s", "/sm", "/u", "/uw"
+        // Credential / cert material
+        "/f", "/p", "/csp", "/kc",
+        // Cert selection (thumbprint, subject, issuer, cert file, automatic)
+        "/sha1", "/n", "/i", "/c", "/a",
+        // Trust/chain
+        "/ph", "/ac", "/r",
+        // Store selection
+        "/s", "/sm",
+        // Usage / extended key usage
+        "/u", "/uw"
     };
 
     public static List<string> BuildSignArguments(
@@ -36,19 +46,33 @@ public static class SignToolCommandBuilder
 
         if (extraArgs is { Length: > 0 })
         {
-            foreach (var arg in extraArgs)
+            for (var i = 0; i < extraArgs.Length; i++)
             {
+                var arg = extraArgs[i];
                 if (string.IsNullOrWhiteSpace(arg))
                     continue;
 
-                // Enforce the allowlist: reject flag tokens (starting with / or -)
-                // that are in the denied set
+                // Extract the flag portion (everything before ':' if combined, else the whole token)
                 var flagPart = arg.Contains(':', StringComparison.Ordinal)
                     ? arg[..arg.IndexOf(':', StringComparison.Ordinal)]
                     : arg;
+
+                // Normalise '-' prefix to '/' so both "-sha1" and "/sha1" hit the same entry
+                if (flagPart.Length > 0 && flagPart[0] == '-')
+                    flagPart = "/" + flagPart[1..];
+
                 if (DeniedFlags.Contains(flagPart))
                 {
-                    // Silently skip disallowed flags — operator config on agent side handles these
+                    // Skip the flag. If the value is a separate (non-flag-looking) token, skip
+                    // it too so callers can't smuggle credential material via flag+value pairs.
+                    if (!arg.Contains(':', StringComparison.Ordinal)
+                        && i + 1 < extraArgs.Length
+                        && !string.IsNullOrWhiteSpace(extraArgs[i + 1]))
+                    {
+                        var next = extraArgs[i + 1].TrimStart();
+                        if (!next.StartsWith('/') && !next.StartsWith('-'))
+                            i++;
+                    }
                     continue;
                 }
 

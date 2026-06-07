@@ -29,17 +29,10 @@ public sealed class PathSafetyTests
     [Theory]
     [InlineData("/C:/Windows/evil.exe")]
     [InlineData("C:/Windows/evil.exe")]
-    public void NormalizeRelativePath_RootedLikeNames_ThrowOnInvalidSegments(string input)
+    public void NormalizeRelativePath_RootedLikeNames_Throw(string input)
     {
-        // Paths with drive letters as a segment are rejected because GetFileName != segment
-        var ex = Record.Exception(() => PathSafety.NormalizeRelativePath(input));
-        // Either throws or produces a path that doesn't escape — either is acceptable
-        if (ex is null)
-        {
-            // If it didn't throw, the result must not be a rooted path
-            var result = PathSafety.NormalizeRelativePath(input);
-            Assert.False(Path.IsPathRooted(result));
-        }
+        // Drive letters contain ':' which is in InvalidSegmentChars — always rejected
+        Assert.Throws<InvalidOperationException>(() => PathSafety.NormalizeRelativePath(input));
     }
 
     [Fact]

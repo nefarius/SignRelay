@@ -106,10 +106,8 @@ public sealed class JobService
                 TotalUnsignedBytes = total
             };
 
-            _db.Jobs.Add(entity);
-            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-            // Atomically move staged files into the live job directory
+            // Promote files BEFORE inserting the DB row so that a failed Directory.Move
+            // never leaves an orphaned Pending record pointing at a missing directory.
             Directory.CreateDirectory(Path.GetDirectoryName(finalRoot)!);
             Directory.Move(stagingRoot, finalRoot);
 
@@ -118,12 +116,18 @@ public sealed class JobService
             if (Directory.Exists(stagingParent))
                 TrySilentDelete(stagingParent, recursive: false);
 
+            _db.Jobs.Add(entity);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
             _hub.Publish(id, new JobEventPayload { Type = "status", Status = JobStatus.Pending, Error = null });
             return (entity, jobToken);
         }
         catch
         {
+            // On any failure: clean up both the staging dir (pre-move) and the final dir
+            // (post-move) so no orphaned files remain regardless of where we failed.
             TrySilentDelete(Path.GetDirectoryName(stagingRoot)!, recursive: true);
+            TrySilentDelete(Path.GetDirectoryName(finalRoot)!, recursive: true);
             throw;
         }
     }
@@ -237,22 +241,40 @@ public sealed class JobService
         var signedRoot = Path.Combine(JobsRoot, "jobs", jobId, "signed");
         Directory.CreateDirectory(signedRoot);
 
-        for (var i = 0; i < manifest.Files.Count; i++)
+        var tmpFiles = new List<string>();
+        try
         {
-            var entry = manifest.Files[i];
-            var form = orderedSignedFiles[i];
-            if (form.Length == 0)
-                throw new InvalidOperationException($"Missing signed file for '{entry.RelativePath}'.");
-
-            var rel = PathSafety.NormalizeRelativePath(entry.RelativePath);
-            var dest = Path.GetFullPath(Path.Combine(signedRoot, rel));
-            if (!PathSafety.IsUnderRoot(dest, signedRoot))
-                throw new InvalidOperationException($"Path escape detected for '{rel}'.");
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            await using (var fs = File.Create(dest))
+            for (var i = 0; i < manifest.Files.Count; i++)
             {
-                await form.CopyToAsync(fs, ct).ConfigureAwait(false);
+                var entry = manifest.Files[i];
+                var form = orderedSignedFiles[i];
+                if (form.Length == 0)
+                    throw new InvalidOperationException($"Missing signed file for '{entry.RelativePath}'.");
+
+                var rel = PathSafety.NormalizeRelativePath(entry.RelativePath);
+                var dest = Path.GetFullPath(Path.Combine(signedRoot, rel));
+                if (!PathSafety.IsUnderRoot(dest, signedRoot))
+                    throw new InvalidOperationException($"Path escape detected for '{rel}'.");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+
+                // Write to a temp file first; atomically promote on success so CompleteJobAsync's
+                // File.Exists check can trust that a present file is complete.
+                var tmpPath = dest + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                tmpFiles.Add(tmpPath);
+                await using (var fs = File.Create(tmpPath))
+                {
+                    await form.CopyToAsync(fs, ct).ConfigureAwait(false);
+                }
+                File.Move(tmpPath, dest, overwrite: true);
+                tmpFiles.RemoveAt(tmpFiles.Count - 1); // committed — no longer needs cleanup
             }
+        }
+        catch
+        {
+            foreach (var tmp in tmpFiles)
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            throw;
         }
 
         _hub.Publish(jobId, new JobEventPayload { Type = "status", Status = JobStatus.Signing, Error = null });

@@ -145,10 +145,10 @@ public static class SubmitCommand
                     return 2;
                 }
 
-                // Validate client-side: reject paths escaping cwd
+                // Validate and normalise client-side: reject paths escaping cwd
                 try
                 {
-                    PathSafety.NormalizeRelativePath(rel);
+                    rel = PathSafety.NormalizeRelativePath(rel);
                 }
                 catch (InvalidOperationException ex)
                 {
@@ -278,15 +278,48 @@ public static class SubmitCommand
                     temps.Add((tmpPath, finalPath));
                 }
 
-                // All downloads succeeded — commit atomically
-                foreach (var (tmp, final) in temps)
-                    File.Move(tmp, final, overwrite: true);
+                // All downloads succeeded.
+                // Commit: back up any existing output files first so we can restore them if a
+                // later move fails. Note: this is a sequential overwrite, NOT an atomic operation
+                // across multiple files — filesystem atomicity is impossible here.
+                var backups = new List<(string BackupPath, string FinalPath)>();
+                var committed = new List<string>();
+                try
+                {
+                    foreach (var (_, final) in temps)
+                    {
+                        if (File.Exists(final))
+                        {
+                            var bak = final + "." + Guid.NewGuid().ToString("N") + ".bak";
+                            File.Move(final, bak);
+                            backups.Add((bak, final));
+                        }
+                    }
 
-                return 0;
+                    foreach (var (tmp, final) in temps)
+                    {
+                        File.Move(tmp, final);
+                        committed.Add(final);
+                    }
+
+                    foreach (var (bak, _) in backups)
+                        try { File.Delete(bak); } catch { }
+
+                    return 0;
+                }
+                catch
+                {
+                    // Undo committed moves and restore backups
+                    foreach (var final in committed)
+                        try { if (File.Exists(final)) File.Delete(final); } catch { }
+                    foreach (var (bak, final) in backups)
+                        try { if (File.Exists(bak)) File.Move(bak, final, overwrite: true); } catch { }
+                    throw;
+                }
             }
             catch
             {
-                // Rollback: clean up any temp files written so far
+                // Rollback: clean up any temp files that were not yet committed
                 foreach (var (tmp, _) in temps)
                 {
                     try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }

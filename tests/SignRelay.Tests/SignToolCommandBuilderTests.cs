@@ -52,10 +52,28 @@ public sealed class SignToolCommandBuilderTests
     [InlineData("/csp")]
     [InlineData("/kc")]
     [InlineData("/ph")]
+    [InlineData("/sha1")]
+    [InlineData("/n")]
+    [InlineData("/i")]
+    [InlineData("/c")]
+    [InlineData("/a")]
     public void BuildSignArguments_DeniedExtraFlags_AreStripped(string deniedFlag)
     {
         var args = SignToolCommandBuilder.BuildSignArguments("file.exe", null, null, [deniedFlag, "value"]);
         Assert.DoesNotContain(deniedFlag, args);
+        // The value token following the denied flag must also be stripped
+        Assert.DoesNotContain("value", args);
+    }
+
+    [Theory]
+    [InlineData("-f")]
+    [InlineData("-sha1")]
+    [InlineData("-n")]
+    public void BuildSignArguments_DeniedFlagsWithDashPrefix_AreStripped(string deniedFlag)
+    {
+        var args = SignToolCommandBuilder.BuildSignArguments("file.exe", null, null, [deniedFlag, "value"]);
+        Assert.DoesNotContain(deniedFlag, args);
+        Assert.DoesNotContain("value", args);
     }
 
     [Fact]

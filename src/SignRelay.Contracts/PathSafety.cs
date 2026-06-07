@@ -6,10 +6,15 @@ namespace SignRelay.Contracts;
 /// </summary>
 public static class PathSafety
 {
+    // Union of OS-invalid filename chars and cross-platform denials (colon is a drive separator on
+    // Windows; not in GetInvalidFileNameChars on Linux, but still unsafe in portable paths).
+    private static readonly char[] InvalidSegmentChars =
+        Path.GetInvalidFileNameChars().Union([':']).ToArray();
+
     /// <summary>
     /// Normalises <paramref name="relativePath"/> to the platform's <see cref="Path.DirectorySeparatorChar"/>
     /// separated form. Throws <see cref="InvalidOperationException"/> when the path is empty, contains
-    /// traversal segments (<c>..</c> / <c>.</c>), or contains OS-invalid filename characters.
+    /// traversal segments (<c>..</c> / <c>.</c>), or contains OS-invalid or cross-platform-unsafe filename characters.
     /// </summary>
     public static string NormalizeRelativePath(string relativePath)
     {
@@ -24,6 +29,8 @@ public static class PathSafety
         {
             if (p is ".." or ".")
                 throw new InvalidOperationException($"Invalid path segment '{p}'.");
+            if (p.IndexOfAny(InvalidSegmentChars) >= 0)
+                throw new InvalidOperationException($"Invalid path segment '{p}': contains disallowed characters.");
             if (Path.GetFileName(p) != p)
                 throw new InvalidOperationException($"Invalid path segment '{p}'.");
         }
@@ -34,11 +41,16 @@ public static class PathSafety
     /// <summary>
     /// Returns <c>true</c> when <paramref name="fullPath"/> is strictly under <paramref name="root"/>
     /// (including the directory separator boundary, preventing prefix-collision attacks).
+    /// Uses case-insensitive comparison on Windows and case-sensitive comparison elsewhere to match
+    /// the underlying filesystem semantics.
     /// </summary>
     public static bool IsUnderRoot(string fullPath, string root)
     {
         var rootWithSep = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                           + Path.DirectorySeparatorChar;
-        return fullPath.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return fullPath.StartsWith(rootWithSep, comparison);
     }
 }

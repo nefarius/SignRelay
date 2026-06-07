@@ -12,6 +12,13 @@ public sealed class AgentOptions
     public string? TimestampServerUrl { get; set; } = "http://timestamp.digicert.com";
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// Maximum time the agent will wait for a single job's network operations (download, upload,
+    /// complete, fail, heartbeat) before the HttpClient itself times out. Should match or exceed the
+    /// server's LeaseDuration. Default: 30 minutes.
+    /// </summary>
+    public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromMinutes(30);
+
     /// <summary>How signtool is executed (see <see cref="SigningExecutionMode"/>).</summary>
     public SigningExecutionMode SigningExecution { get; set; } = SigningExecutionMode.Auto;
 

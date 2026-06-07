@@ -52,6 +52,10 @@ public sealed class JobSweeper : BackgroundService
         var now = DateTimeOffset.UtcNow;
         var terminalFloor = (int)JobStatus.Succeeded;
 
+        // Collect SSE events to publish AFTER SaveChangesAsync so subscribers only see
+        // transitions that were actually committed to the database.
+        var bufferedEvents = new List<(string JobId, JobEventPayload Payload)>();
+
         // Jobs that have hit their overall TTL without reaching a terminal state
         var expired = await db.Jobs
             .FromSqlInterpolated(
@@ -69,7 +73,7 @@ public sealed class JobSweeper : BackgroundService
             j.CompletedUtc = now;
             j.ErrorMessage = "Job expired before completion.";
             j.LeaseTokenHash = null;
-            hub.Publish(j.Id, new JobEventPayload { Type = "done", Status = JobStatus.TimedOut, Error = j.ErrorMessage });
+            bufferedEvents.Add((j.Id, new JobEventPayload { Type = "done", Status = JobStatus.TimedOut, Error = j.ErrorMessage }));
             _log.LogWarning("Job {JobId} timed out.", j.Id);
         }
 
@@ -94,7 +98,7 @@ public sealed class JobSweeper : BackgroundService
                 j.CompletedUtc = now;
                 j.ErrorMessage = $"Job exceeded maximum lease attempts ({opt.MaxLeaseAttempts}).";
                 j.LeaseTokenHash = null;
-                hub.Publish(j.Id, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = j.ErrorMessage });
+                bufferedEvents.Add((j.Id, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = j.ErrorMessage }));
                 _log.LogWarning("Job {JobId} permanently failed: too many lease attempts.", j.Id);
             }
             else
@@ -111,7 +115,11 @@ public sealed class JobSweeper : BackgroundService
         }
 
         if (expired.Count > 0 || staleLeases.Count > 0)
+        {
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            foreach (var (jobId, payload) in bufferedEvents)
+                hub.Publish(jobId, payload);
+        }
 
         // Disk cleanup: delete artifact directories for jobs that reached a terminal state
         // longer ago than the configured grace period

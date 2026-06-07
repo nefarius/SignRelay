@@ -32,7 +32,10 @@ try
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
         ForwardedHeadersConfiguration.Apply(builder.Configuration, options));
 
-    builder.Services.Configure<SignRelayOptions>(builder.Configuration.GetSection(SignRelayOptions.SectionName));
+    builder.Services
+        .AddOptions<SignRelayOptions>()
+        .Bind(builder.Configuration.GetSection(SignRelayOptions.SectionName))
+        .ValidateOnStart();
     builder.Services.AddSingleton<IValidateOptions<SignRelayOptions>, SignRelayOptionsValidator>();
 
     builder.Services.AddDbContext<AppDbContext>(o =>
@@ -66,17 +69,17 @@ try
     if (builder.Environment.IsDevelopment())
         builder.Services.SwaggerDocument();
 
-    // Kestrel request body size limit for uploads (applies globally; individual endpoints can override)
-    builder.WebHost.ConfigureKestrel(k =>
+    // Kestrel request body size limit — derived from MaxTotalJobBytes (×2 to cover signed uploads)
+    // so the Kestrel cap and the service-layer validation never drift apart.
+    builder.WebHost.ConfigureKestrel((ctx, k) =>
     {
-        // Server's MaxTotalJobBytes default is 512 MB; allow double that for signed uploads
-        k.Limits.MaxRequestBodySize = 1_073_741_824; // 1 GiB hard cap
+        var maxBytes = ctx.Configuration
+            .GetSection(SignRelayOptions.SectionName)
+            .GetValue<long>("MaxTotalJobBytes", 512L * 1024 * 1024);
+        k.Limits.MaxRequestBodySize = maxBytes * 2;
     });
 
     var app = builder.Build();
-
-    // Validate options at startup — fails fast on bad configuration
-    app.Services.GetRequiredService<IOptions<SignRelayOptions>>().Value.ToString();
 
     await using (var scope = app.Services.CreateAsyncScope())
     {

@@ -4,25 +4,38 @@ namespace SignRelay.Server.Options;
 
 public sealed class SignRelayOptionsValidator : IValidateOptions<SignRelayOptions>
 {
-    private readonly IHostEnvironment _env;
+    private const int MinTokenLength = 32;
 
-    public SignRelayOptionsValidator(IHostEnvironment env) => _env = env;
+    private readonly IHostEnvironment _env;
+    private readonly ILogger<SignRelayOptionsValidator> _log;
+
+    public SignRelayOptionsValidator(IHostEnvironment env, ILogger<SignRelayOptionsValidator> log)
+    {
+        _env = env;
+        _log = log;
+    }
 
     public ValidateOptionsResult Validate(string? name, SignRelayOptions options)
     {
-        if (!_env.IsProduction())
-            return ValidateOptionsResult.Success;
-
         var errors = new List<string>();
 
-        if (string.IsNullOrWhiteSpace(options.CiToken) || options.CiToken.Length < 16)
-            errors.Add("SignRelay:CiToken must be at least 16 characters in Production.");
+        if (string.IsNullOrWhiteSpace(options.CiToken) || options.CiToken.Length < MinTokenLength)
+            errors.Add($"SignRelay:CiToken must be at least {MinTokenLength} characters.");
 
-        if (string.IsNullOrWhiteSpace(options.AgentToken) || options.AgentToken.Length < 16)
-            errors.Add("SignRelay:AgentToken must be at least 16 characters in Production.");
+        if (string.IsNullOrWhiteSpace(options.AgentToken) || options.AgentToken.Length < MinTokenLength)
+            errors.Add($"SignRelay:AgentToken must be at least {MinTokenLength} characters.");
 
-        return errors.Count == 0
-            ? ValidateOptionsResult.Success
-            : ValidateOptionsResult.Fail(errors);
+        if (errors.Count == 0)
+            return ValidateOptionsResult.Success;
+
+        if (!_env.IsProduction())
+        {
+            // Warn in non-production but allow startup to continue
+            foreach (var err in errors)
+                _log.LogWarning("Token configuration warning: {Message}", err);
+            return ValidateOptionsResult.Success;
+        }
+
+        return ValidateOptionsResult.Fail(errors);
     }
 }

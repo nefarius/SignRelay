@@ -19,6 +19,7 @@ public sealed class Worker : BackgroundService
     private readonly SignToolRunner _signTool;
     private readonly IJobStaging _jobStaging;
     private readonly IHttpClientFactory _httpFactory;
+    private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<Worker> _log;
 
     public Worker(
@@ -26,12 +27,14 @@ public sealed class Worker : BackgroundService
         SignToolRunner signTool,
         IJobStaging jobStaging,
         IHttpClientFactory httpFactory,
+        IHostApplicationLifetime lifetime,
         ILogger<Worker> log)
     {
         _opt = opt;
         _signTool = signTool;
         _jobStaging = jobStaging;
         _httpFactory = httpFactory;
+        _lifetime = lifetime;
         _log = log;
     }
 
@@ -42,12 +45,14 @@ public sealed class Worker : BackgroundService
         if (string.IsNullOrWhiteSpace(opt.AgentToken))
         {
             _log.LogError("AgentToken is not configured. The agent will not start.");
+            _lifetime.StopApplication();
             return;
         }
 
         if (opt.SigningExecution == SigningExecutionMode.InteractiveUser && !OperatingSystem.IsWindows())
         {
             _log.LogError("SigningExecution=InteractiveUser is only supported on Windows. The agent will not start.");
+            _lifetime.StopApplication();
             return;
         }
 
@@ -77,6 +82,7 @@ public sealed class Worker : BackgroundService
             catch (HttpRequestException ex) when ((int?)ex.StatusCode is 401 or 403)
             {
                 _log.LogError(ex, "Authentication or authorisation failure — check AgentToken configuration. Agent stopping.");
+                _lifetime.StopApplication();
                 break;
             }
             catch (Exception ex)
@@ -117,6 +123,23 @@ public sealed class Worker : BackgroundService
             _log.LogError("Lease for job {JobId}: download path count ({Paths}) does not match manifest file count ({Files}).",
                 lease.JobId, lease.UnsignedDownloadPaths?.Count ?? 0, lease.Manifest.Files.Count);
             return null;
+        }
+
+        // Reject any absolute URIs in download paths — only relative paths sourced from ApiRoutes
+        // (e.g. ApiRoutes.WorkerUnsigned) are expected; absolute URIs could redirect the lease
+        // bearer token to a foreign host.
+        foreach (var path in lease.UnsignedDownloadPaths!)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                _log.LogError("Lease for job {JobId}: download path list contains a null or empty entry.", lease.JobId);
+                return null;
+            }
+            if (Uri.TryCreate(path, UriKind.Absolute, out _))
+            {
+                _log.LogError("Lease for job {JobId}: download path '{Path}' is an absolute URI; only relative paths are accepted.", lease.JobId, path);
+                return null;
+            }
         }
 
         return lease;
