@@ -28,13 +28,13 @@ public sealed class SignRelayOptionsValidator : IValidateOptions<SignRelayOption
         if (errors.Count == 0)
             return ValidateOptionsResult.Success;
 
-        if (!_env.IsProduction())
-        {
-            // Warn in non-production but allow startup to continue
-            foreach (var err in errors)
-                _log.LogWarning("Token configuration warning: {Message}", err);
+        foreach (var err in errors)
+            _log.LogWarning("Token configuration warning: {Message}", err);
+
+        // Only suppress failures in the Development environment. Any other environment
+        // (Staging, QA, Production, custom) is treated as production-grade and fails fast.
+        if (_env.IsDevelopment())
             return ValidateOptionsResult.Success;
-        }
 
         return ValidateOptionsResult.Fail(errors);
     }
