@@ -3,8 +3,9 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0.201 AS build
 ARG MINVERVERSIONOVERRIDE
 ENV MINVERVERSIONOVERRIDE=$MINVERVERSIONOVERRIDE
 WORKDIR /src
-# Required so SDK projects inherit TargetFramework (same as local builds); see repo root Directory.Build.props
+# Copy MSBuild/CPM manifests before project files so `dotnet restore` can resolve versions
 COPY Directory.Build.props .
+COPY Directory.Packages.props .
 COPY src/SignRelay.Contracts/SignRelay.Contracts.csproj src/SignRelay.Contracts/
 COPY src/SignRelay.Server/SignRelay.Server.csproj src/SignRelay.Server/
 RUN dotnet restore src/SignRelay.Server/SignRelay.Server.csproj
@@ -22,8 +23,8 @@ ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 EXPOSE 8080
 VOLUME ["/data"]
 
-# Run as a non-root user
-RUN adduser --disabled-password --gecos "" --uid 1001 appuser \
+# Run as a non-root user (useradd works on both Debian and Ubuntu Chiseled base images)
+RUN useradd -u 1001 -M -s /sbin/nologin appuser \
     && mkdir -p /data \
     && chown -R appuser:appuser /app /data
 USER appuser
