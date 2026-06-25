@@ -13,7 +13,7 @@ Command name: `signrelay`
 ## Requirements
 
 - .NET 10 runtime (or SDK)
-- A running SignRelay server and a valid CI token (`SignRelay__CiToken`)
+- A running SignRelay server at a matching version (same major release as this tool; see [releases](https://github.com/nefarius/SignRelay/releases)) and a valid CI token (`SignRelay__CiToken`)
 
 ## Quick start
 
@@ -27,7 +27,7 @@ signrelay submit \
 
 ## Usage
 
-```
+```text
 signrelay submit --server <url> [--token <token>] (--output <dir> | --in-place) [options] <files>...
 ```
 
@@ -64,8 +64,12 @@ Either `--output` or `--in-place` must be specified, but not both.
 
 ## Supported systems
 
-- Any OS with a .NET 10 runtime.
-- The **signing agent** (separate component) is Windows-only. This CLI runs wherever .NET 10 runs.
+| Component | OS | Architecture |
+|---|---|---|
+| **CLI (this tool)** | Windows, Linux, macOS | x64, Arm64 |
+| **Signing agent** | Windows 10 / 11 only | x64 (primary) |
+
+The CLI is a .NET 10 global tool and runs on any platform and architecture where the .NET 10 runtime is supported. The signing agent is a separate component; its Windows x64 constraint does not affect where the CLI can run.
 
 ## Server and agent setup
 
