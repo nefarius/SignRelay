@@ -8,11 +8,9 @@
          vulnerable SQLitePCLRaw.lib.e_sqlite3 2.1.11 (CVE-2025-6965 / GHSA-2m69-gcr7-jv3q). -->
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
-
   <ItemGroup>
     <!-- Shared tooling (applied via Directory.Build.props, excluded from _build) -->
     <PackageVersion Include="MinVer" Version="7.0.0" />
-
     <!-- Server -->
     <PackageVersion Include="FastEndpoints" Version="8.1.0" />
     <PackageVersion Include="FastEndpoints.Swagger" Version="8.1.0" />
@@ -21,24 +19,19 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.9" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
-
     <!-- Agent -->
     <PackageVersion Include="CliWrap" Version="3.10.2" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.9" />
-
     <!-- CLI -->
-    <!-- System.CommandLine is beta; documented constraint -->
-    <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
-
+    <PackageVersion Include="System.CommandLine" Version="2.0.9" />
     <!-- Transitive pin: bundle_e_sqlite3 3.0.3 depends on SourceGear.sqlite3 >= 3.50.4.5
          (SQLite >= 3.50.2), replacing the vulnerable SQLitePCLRaw.lib.e_sqlite3 2.1.11
          pulled in by Microsoft.EntityFrameworkCore.Sqlite (CVE-2025-6965 / GHSA-2m69-gcr7-jv3q). -->
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
     <PackageVersion Include="SQLitePCLRaw.core" Version="3.0.3" />
     <PackageVersion Include="SourceGear.sqlite3" Version="3.50.4.5" />
-
     <!-- Tests -->
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />

@@ -27,22 +27,40 @@ public static class SubmitCommand
 
     public static RootCommand Build()
     {
-        var server = new Option<Uri>("--server", "Base URL of the SignRelay server (e.g. https://relay.example.com)") { IsRequired = true };
-        var token = new Option<string>(
-            aliases: ["--token", "-t"],
-            getDefaultValue: () => Environment.GetEnvironmentVariable("SIGN_RELAY_CI_TOKEN") ?? "",
-            description: "CI bearer token (or set SIGN_RELAY_CI_TOKEN).");
-        token.IsRequired = false;
-
-        var output = new Option<DirectoryInfo?>("--output", "Write signed files under this directory (preserves relative paths).");
-        var inplace = new Option<bool>("--in-place", () => false, "Overwrite input files with signed copies.");
-        var timeout = new Option<TimeSpan>(
-            "--timeout",
-            () => TimeSpan.FromMinutes(45),
-            "Maximum time to wait for signing to complete.");
-        var allowInsecure = new Option<bool>("--allow-insecure", () => false, "Allow http:// server URLs (not recommended; bearer tokens will be sent in cleartext).");
-
-        var files = new Argument<List<string>>("files", "Paths to files to sign") { Arity = ArgumentArity.OneOrMore };
+        var server = new Option<Uri>("--server")
+        {
+            Description = "Base URL of the SignRelay server (e.g. https://relay.example.com)",
+            Required = true
+        };
+        var token = new Option<string>("--token", "-t")
+        {
+            Description = "CI bearer token (or set SIGN_RELAY_CI_TOKEN).",
+            DefaultValueFactory = _ => Environment.GetEnvironmentVariable("SIGN_RELAY_CI_TOKEN") ?? ""
+        };
+        var output = new Option<DirectoryInfo?>("--output")
+        {
+            Description = "Write signed files under this directory (preserves relative paths)."
+        };
+        var inplace = new Option<bool>("--in-place")
+        {
+            Description = "Overwrite input files with signed copies.",
+            DefaultValueFactory = _ => false
+        };
+        var timeout = new Option<TimeSpan>("--timeout")
+        {
+            Description = "Maximum time to wait for signing to complete.",
+            DefaultValueFactory = _ => TimeSpan.FromMinutes(45)
+        };
+        var allowInsecure = new Option<bool>("--allow-insecure")
+        {
+            Description = "Allow http:// server URLs (not recommended; bearer tokens will be sent in cleartext).",
+            DefaultValueFactory = _ => false
+        };
+        var files = new Argument<List<string>>("files")
+        {
+            Description = "Paths to files to sign",
+            Arity = ArgumentArity.OneOrMore
+        };
 
         var cmd = new Command("submit", "Submit files to the relay, wait for signing, then download signed outputs.")
         {
@@ -55,10 +73,17 @@ public static class SubmitCommand
             files
         };
 
-        cmd.SetHandler(RunAsync, server, token, output, inplace, timeout, allowInsecure, files);
+        cmd.SetAction((parseResult, _) => RunAsync(
+            parseResult.GetValue(server)!,
+            parseResult.GetValue(token) ?? "",
+            parseResult.GetValue(output),
+            parseResult.GetValue(inplace),
+            parseResult.GetValue(timeout),
+            parseResult.GetValue(allowInsecure),
+            parseResult.GetValue(files)!));
 
         var root = new RootCommand("SignRelay CI client");
-        root.AddCommand(cmd);
+        root.Subcommands.Add(cmd);
         return root;
     }
 
