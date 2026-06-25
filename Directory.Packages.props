@@ -30,7 +30,7 @@
 
     <!-- CLI -->
     <!-- System.CommandLine is beta; documented constraint -->
-    <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.9" />
 
     <!-- Transitive pin: bundle_e_sqlite3 3.0.3 depends on SourceGear.sqlite3 >= 3.50.4.5
          (SQLite >= 3.50.2), replacing the vulnerable SQLitePCLRaw.lib.e_sqlite3 2.1.11
