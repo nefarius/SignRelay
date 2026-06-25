@@ -7,7 +7,23 @@
     <PackageId>Nefarius.Tools.SignRelay</PackageId>
     <ToolCommandName>signrelay</ToolCommandName>
     <PackageOutputPath>./nupkg</PackageOutputPath>
+
+    <Description>CLI tool for SignRelay — submit files to a relay server, wait for signing via SSE, and download signed outputs. Keeps code-signing keys off the CI runner.</Description>
+    <Authors>Benjamin Hoeglinger-Stelzer</Authors>
+    <Company>Nefarius</Company>
+    <PackageProjectUrl>https://github.com/nefarius/SignRelay</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/nefarius/SignRelay</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>code-signing;signtool;ci;authenticode;dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>NSS-128x128.png</PackageIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\assets\NSS-128x128.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SignRelay.Contracts\SignRelay.Contracts.csproj" />
