@@ -199,7 +199,8 @@ public static class SubmitCommand
 
         // Link CancellationToken to Ctrl+C, the wall-clock timeout, and the framework token
         using var ctrlC = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; ctrlC.Cancel(); };
+        ConsoleCancelEventHandler ctrlCHandler = (_, e) => { e.Cancel = true; ctrlC.Cancel(); };
+        Console.CancelKeyPress += ctrlCHandler;
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ctrlC.Token, frameworkToken);
         cts.CancelAfter(timeout);
 
@@ -359,6 +360,11 @@ public static class SubmitCommand
             await Console.Error.WriteLineAsync("Cancelled by user.").ConfigureAwait(false);
             return 5;
         }
+        catch (OperationCanceledException) when (frameworkToken.IsCancellationRequested)
+        {
+            await Console.Error.WriteLineAsync($"Cancelled by host during {phase}.").ConfigureAwait(false);
+            return 5;
+        }
         catch (OperationCanceledException)
         {
             await Console.Error.WriteLineAsync($"Timed out during {phase}.").ConfigureAwait(false);
@@ -374,6 +380,10 @@ public static class SubmitCommand
         {
             await Console.Error.WriteLineAsync($"Error during {phase}: {ex.Message}").ConfigureAwait(false);
             return 1;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= ctrlCHandler;
         }
     }
 
