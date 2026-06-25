@@ -73,14 +73,15 @@ public static class SubmitCommand
             files
         };
 
-        cmd.SetAction((parseResult, _) => RunAsync(
+        cmd.SetAction((parseResult, ct) => RunAsync(
             parseResult.GetValue(server)!,
             parseResult.GetValue(token) ?? "",
             parseResult.GetValue(output),
             parseResult.GetValue(inplace),
             parseResult.GetValue(timeout),
             parseResult.GetValue(allowInsecure),
-            parseResult.GetValue(files)!));
+            parseResult.GetValue(files)!,
+            ct));
 
         var root = new RootCommand("SignRelay CI client");
         root.Subcommands.Add(cmd);
@@ -94,7 +95,8 @@ public static class SubmitCommand
         bool inPlace,
         TimeSpan timeout,
         bool allowInsecure,
-        List<string> filePaths)
+        List<string> filePaths,
+        CancellationToken frameworkToken = default)
     {
         if (string.IsNullOrWhiteSpace(token))
         {
@@ -195,10 +197,10 @@ public static class SubmitCommand
             return 2;
         }
 
-        // Link CancellationToken to Ctrl+C as well as the wall-clock timeout
+        // Link CancellationToken to Ctrl+C, the wall-clock timeout, and the framework token
         using var ctrlC = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; ctrlC.Cancel(); };
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ctrlC.Token);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ctrlC.Token, frameworkToken);
         cts.CancelAfter(timeout);
 
         using var http = new HttpClient { BaseAddress = TrimServer(server), Timeout = Timeout.InfiniteTimeSpan };
