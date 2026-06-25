@@ -30,7 +30,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- System.CommandLine is pinned to a beta release; see Directory.Packages.props -->
     <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
