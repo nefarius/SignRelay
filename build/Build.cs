@@ -23,6 +23,9 @@ public sealed class Build : NukeBuild
     [Parameter("Container engine for image builds: 'docker' or 'podman'. Empty = auto-detect (docker, then podman).")]
     readonly string ContainerEngine = "";
 
+    [Parameter("If set, pushes the built image to the registry after a successful build.")]
+    readonly bool PushImage;
+
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
     static AbsolutePath PackagesDirectory => ArtifactsDirectory / "packages";
     static AbsolutePath PublishRoot => ArtifactsDirectory / "publish";
@@ -52,6 +55,11 @@ public sealed class Build : NukeBuild
                 .SetFile(ServerDockerfile)
                 .SetTag(new[] { ServerDockerImage })
                 .SetBuildArg(new[] { $"MINVERVERSIONOVERRIDE={minVer}" }));
+
+            if (PushImage)
+                DockerPush(s => s
+                    .SetProcessToolPath(enginePath)
+                    .SetName(ServerDockerImage));
         });
 
     /// <summary>Resolves the container engine executable path. Tries <paramref name="preferred"/> first; falls back to <c>docker</c> then <c>podman</c> when empty.</summary>

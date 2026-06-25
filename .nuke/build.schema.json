@@ -117,6 +117,10 @@
           "type": "string",
           "description": "If set, passed to docker build as MINVERVERSIONOVERRIDE instead of computing Version via dotnet msbuild on the host (Git/MinVer)"
         },
+        "PushImage": {
+          "type": "boolean",
+          "description": "If set, pushes the built image to the registry after a successful build"
+        },
         "ServerDockerImage": {
           "type": "string",
           "description": "Docker image name:tag for docker/Dockerfile (SignRelay.Server). Default is 'signrelay/server:latest'"

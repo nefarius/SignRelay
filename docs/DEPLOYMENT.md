@@ -28,7 +28,7 @@ Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/p
 
 | Target | What it does |
 |--------|----------------|
-| `DockerServer` | Builds [docker/Dockerfile](../docker/Dockerfile) with context at the **repository root** (same as [compose.yml](../docker/compose.yml)). Injects **`MINVERVERSIONOVERRIDE`** from host MinVer/`dotnet msbuild` (no `.git` in context). Tags **`signrelay/server:latest`** by default — use **`--ServerDockerImage`**. Optional **`--MinVerVersionOverride`** for CI. The engine is **auto-detected** (`docker` first, then `podman`); override with **`--ContainerEngine podman`**. |
+| `DockerServer` | Builds [docker/Dockerfile](../docker/Dockerfile) with context at the **repository root** (same as [compose.yml](../docker/compose.yml)). Injects **`MINVERVERSIONOVERRIDE`** from host MinVer/`dotnet msbuild` (no `.git` in context). Tags **`signrelay/server:latest`** by default — use **`--ServerDockerImage`**. Optional **`--MinVerVersionOverride`** for CI. The engine is **auto-detected** (`docker` first, then `podman`); override with **`--ContainerEngine podman`**. Pass **`--PushImage`** to push the tagged image after a successful build (authenticate with the registry beforehand). |
 
 Examples:
 
@@ -42,6 +42,8 @@ Examples:
 .\build.ps1 DockerServer --MinVerVersionOverride 2.0.0
 # Explicit Podman (also works without --ContainerEngine if only Podman is on PATH)
 .\build.ps1 DockerServer --ContainerEngine podman
+# Build and push (authenticate with the registry first)
+.\build.ps1 DockerServer --ServerDockerImage myregistry/signrelay:1.0 --PushImage
 ```
 
 Manual **`docker build`** / **`podman build`** / **`docker compose build`** (without NUKE): set **`MINVERVERSIONOVERRIDE`** to the same value MinVer would compute (requires a clone with Git tags), then build:
