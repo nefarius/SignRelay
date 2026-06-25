@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Nuke.Common;
 using Nuke.Common.IO;
+using Nuke.Common.Tooling;
 using Nuke.Common.Tools.Docker;
 using Nuke.Common.Tools.DotNet;
 using static Nuke.Common.Tools.Docker.DockerTasks;
@@ -18,6 +19,9 @@ public sealed class Build : NukeBuild
 
     [Parameter("If set, passed to docker build as MINVERVERSIONOVERRIDE instead of computing Version via dotnet msbuild on the host (Git/MinVer).")]
     readonly string MinVerVersionOverride = "";
+
+    [Parameter("Container engine for image builds: 'docker' or 'podman'. Empty = auto-detect (docker, then podman).")]
+    readonly string ContainerEngine = "";
 
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
     static AbsolutePath PackagesDirectory => ArtifactsDirectory / "packages";
@@ -41,12 +45,31 @@ public sealed class Build : NukeBuild
             if (string.IsNullOrWhiteSpace(minVer))
                 throw new InvalidOperationException("Could not resolve a version for MINVERVERSIONOVERRIDE (set MinVerVersionOverride or ensure MinVer can compute Version from Git tags).");
 
+            var enginePath = ResolveContainerEnginePath(ContainerEngine);
             DockerBuild(s => s
+                .SetProcessToolPath(enginePath)
                 .SetPath(RootDirectory)
                 .SetFile(ServerDockerfile)
                 .SetTag(new[] { ServerDockerImage })
                 .SetBuildArg(new[] { $"MINVERVERSIONOVERRIDE={minVer}" }));
         });
+
+    /// <summary>Resolves the container engine executable path. Tries <paramref name="preferred"/> first; falls back to <c>docker</c> then <c>podman</c> when empty.</summary>
+    static string ResolveContainerEnginePath(string preferred)
+    {
+        var candidates = string.IsNullOrWhiteSpace(preferred)
+            ? new[] { "docker", "podman" }
+            : new[] { preferred.Trim() };
+
+        foreach (var name in candidates)
+        {
+            try { return ToolPathResolver.GetPathExecutable(name); }
+            catch { /* try next */ }
+        }
+
+        throw new InvalidOperationException(
+            $"No container engine found on PATH. Tried: {string.Join(", ", candidates)}. Install Docker or Podman, or pass --ContainerEngine.");
+    }
 
     /// <summary>Reads <see cref="Version"/> from MSBuild/MinVer (requires <c>.git</c> on the host unless overridden).</summary>
     static string QueryMsBuildVersion(AbsolutePath projectPath)

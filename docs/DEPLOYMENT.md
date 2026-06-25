@@ -24,11 +24,11 @@ Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/p
 | `Publish` | All of the above (default entry target for `dotnet run --project build/...`) |
 | `All` | Same as `Publish` |
 
-**Docker image (optional, separate command)** — requires Docker on `PATH`:
+**Container image (optional, separate command)** — requires Docker or Podman on `PATH`:
 
 | Target | What it does |
 |--------|----------------|
-| `DockerServer` | `docker build` using [docker/Dockerfile](../docker/Dockerfile) with build context at the **repository root** (same as [compose.yml](../docker/compose.yml)). Injects **`MINVERVERSIONOVERRIDE`** from host MinVer/`dotnet msbuild` (no `.git` in context). Tags **`signrelay/server:latest`** by default — use **`--ServerDockerImage`**. Optional **`--MinVerVersionOverride`** for CI. |
+| `DockerServer` | Builds [docker/Dockerfile](../docker/Dockerfile) with context at the **repository root** (same as [compose.yml](../docker/compose.yml)). Injects **`MINVERVERSIONOVERRIDE`** from host MinVer/`dotnet msbuild` (no `.git` in context). Tags **`signrelay/server:latest`** by default — use **`--ServerDockerImage`**. Optional **`--MinVerVersionOverride`** for CI. The engine is **auto-detected** (`docker` first, then `podman`); override with **`--ContainerEngine podman`**. |
 
 Examples:
 
@@ -40,16 +40,21 @@ Examples:
 .\build.ps1 DockerServer
 .\build.ps1 DockerServer --ServerDockerImage myregistry/signrelay:1.0
 .\build.ps1 DockerServer --MinVerVersionOverride 2.0.0
+# Explicit Podman (also works without --ContainerEngine if only Podman is on PATH)
+.\build.ps1 DockerServer --ContainerEngine podman
 ```
 
-Manual **`docker build`** / **`docker compose build`** (without NUKE): set **`MINVERVERSIONOVERRIDE`** to the same value MinVer would compute (requires a clone with Git tags), then build:
+Manual **`docker build`** / **`podman build`** / **`docker compose build`** (without NUKE): set **`MINVERVERSIONOVERRIDE`** to the same value MinVer would compute (requires a clone with Git tags), then build:
 
 ```powershell
 $v = dotnet msbuild src/SignRelay.Server/SignRelay.Server.csproj -restore -getProperty:Version -nologo -verbosity:quiet
+# Docker
 docker build -f docker/Dockerfile --build-arg MINVERVERSIONOVERRIDE=$v -t signrelay/server:latest .
+# Podman (same arguments)
+podman build -f docker/Dockerfile --build-arg MINVERVERSIONOVERRIDE=$v -t signrelay/server:latest .
 ```
 
-For **`docker compose`**, export **`MINVERVERSIONOVERRIDE`** before building (see [compose.yml](../docker/compose.yml) `build.args`), or rely on NUKE **`DockerServer`** which passes the arg automatically.
+For **`docker compose`** / **`podman compose`**, export **`MINVERVERSIONOVERRIDE`** before building (see [compose.yml](../docker/compose.yml) `build.args`), or rely on NUKE **`DockerServer`** which passes the arg automatically.
 
 ```bash
 # Linux / macOS
@@ -64,13 +69,14 @@ dotnet run --project build/_build.csproj -- Publish
 dotnet run --project build/_build.csproj -- DockerServer
 ```
 
-## Relay server (Docker / VPS)
+## Relay server (Docker / Podman / VPS)
 
 - Map **port 8080** (or place a reverse proxy in front with TLS). The container listens on `0.0.0.0:8080`.
 - Persist **`SignRelay__StoragePath`** (default `/data` in [compose.yml](../docker/compose.yml)) so SQLite and uploaded blobs survive restarts.
 - Set secrets via environment variables (ASP.NET Core configuration):
   - **`SignRelay__CiToken`** — bearer token used by CI / `signrelay submit --token`.
   - **`SignRelay__AgentToken`** — bearer token used by the Windows agent for lease, upload, and complete.
+- **Podman rootless note**: the container runs as UID 1001. With rootless Podman and a bind-mounted host directory, ensure the host path is owned by or accessible to the subuid-mapped user (`podman unshare chown 1001:1001 ./data`). Named volumes (as in [compose.yml](../docker/compose.yml)) are managed by Podman and do not require manual ownership changes.
 - **Job size and lifetime** — tune `SignRelay__MaxTotalJobBytes` and `SignRelay__JobTimeToLive` (TimeSpan format, e.g. `02:00:00`) in [appsettings.json](../src/SignRelay.Server/appsettings.json) or environment.
 
 ### Reverse proxy long reads (SSE)

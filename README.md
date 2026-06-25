@@ -19,7 +19,7 @@ Operational detail—Docker, reverse proxies and SSE timeouts, Windows Service i
 - **SSE** endpoint for CI to wait on signing completion (`GET /api/v1/jobs/{id}/events`).
 - Agent **signing execution modes** (`Auto`, `SameProcess`, `InteractiveUser`) for console vs Windows Service and interactive certificate/smart-card UI.
 - CLI **`signrelay submit`** with `--token` or `SIGN_RELAY_CI_TOKEN`, optional `--output` or `--in-place`, and configurable `--timeout`.
-- Optional **Docker** image build for the server (see deployment doc).
+- Optional **Docker or Podman** image build for the server (see deployment doc).
 
 ## Limitations / scope boundaries
 
@@ -27,7 +27,7 @@ Operational detail—Docker, reverse proxies and SSE timeouts, Windows Service i
 - Signing assumes a **Microsoft-style** `signtool` workflow; other toolchains are out of scope.
 - Interactive signing relies on an **appropriate logged-on session** where applicable; multi-session/RDP edge cases are documented in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - A **reverse proxy** in front of the relay must allow **long-lived reads** for the SSE stream (see deployment doc).
-- **Docker** builds do not copy `.git`; image version uses **`MINVERVERSIONOVERRIDE`** (NUKE `DockerServer` sets this). See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+- **Container image** builds (Docker or Podman) do not copy `.git`; image version uses **`MINVERVERSIONOVERRIDE`** (NUKE `DockerServer` sets this). See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Supported systems / environment
 
@@ -84,7 +84,7 @@ Full steps: TLS, ports, proxy timeouts, and service installation are in **[`docs
 
 - **.NET SDK 10.x** — pinned in [`global.json`](global.json); install [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or a newer 10.x patch.
 - **NUKE** — use repo bootstrappers [`build.sh`](build.sh) / [`build.ps1`](build.ps1); a global `nuke` tool is **not** required.
-- **Docker** — optional, on `PATH`, for `DockerServer` / image builds.
+- **Docker or Podman** — optional, on `PATH`, for `DockerServer` / image builds. The engine is auto-detected (`docker` first, then `podman`); override with `--ContainerEngine podman`.
 
 Versioning uses **MinVer** with tag prefix **`v`**. The build project under [`build/`](build/) is excluded from MinVer.
 

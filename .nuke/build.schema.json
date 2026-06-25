@@ -109,6 +109,10 @@
           "type": "string",
           "description": "Configuration to build — Default is 'Release'"
         },
+        "ContainerEngine": {
+          "type": "string",
+          "description": "Container engine for image builds: 'docker' or 'podman'. Empty = auto-detect (docker, then podman)"
+        },
         "MinVerVersionOverride": {
           "type": "string",
           "description": "If set, passed to docker build as MINVERVERSIONOVERRIDE instead of computing Version via dotnet msbuild on the host (Git/MinVer)"
