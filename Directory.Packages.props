@@ -12,8 +12,8 @@
     <!-- Shared tooling (applied via Directory.Build.props, excluded from _build) -->
     <PackageVersion Include="MinVer" Version="7.0.0" />
     <!-- Server -->
-    <PackageVersion Include="FastEndpoints" Version="8.1.0" />
-    <PackageVersion Include="FastEndpoints.Swagger" Version="8.1.0" />
+    <PackageVersion Include="FastEndpoints" Version="8.2.0" />
+    <PackageVersion Include="FastEndpoints.Swagger" Version="8.2.0" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.9" />
