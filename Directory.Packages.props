@@ -21,9 +21,9 @@
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <!-- Agent -->
     <PackageVersion Include="CliWrap" Version="3.10.2" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.10" />
     <!-- CLI -->
     <PackageVersion Include="System.CommandLine" Version="2.0.9" />
     <!-- Transitive pin: bundle_e_sqlite3 3.0.3 depends on SourceGear.sqlite3 >= 3.50.4.5
