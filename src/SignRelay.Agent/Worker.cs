@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -18,6 +19,7 @@ public sealed class Worker : BackgroundService
     private readonly IOptions<AgentOptions> _opt;
     private readonly SignToolRunner _signTool;
     private readonly IJobStaging _jobStaging;
+    private readonly InteractiveUserProcessLauncher _interactive;
     private readonly IHttpClientFactory _httpFactory;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<Worker> _log;
@@ -26,6 +28,7 @@ public sealed class Worker : BackgroundService
         IOptions<AgentOptions> opt,
         SignToolRunner signTool,
         IJobStaging jobStaging,
+        InteractiveUserProcessLauncher interactive,
         IHttpClientFactory httpFactory,
         IHostApplicationLifetime lifetime,
         ILogger<Worker> log)
@@ -33,6 +36,7 @@ public sealed class Worker : BackgroundService
         _opt = opt;
         _signTool = signTool;
         _jobStaging = jobStaging;
+        _interactive = interactive;
         _httpFactory = httpFactory;
         _lifetime = lifetime;
         _log = log;
@@ -49,12 +53,17 @@ public sealed class Worker : BackgroundService
             return;
         }
 
+        var interactive = SigningExecutionHelper.UseInteractiveSigning(opt)
+                          && OperatingSystem.IsWindows()
+                          && RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        var extraDirs = SignToolSearchPaths.Build(interactive ? _interactive : null);
+
         _log.LogInformation(
             "SignRelay Agent starting. AgentId={AgentId}, Mode={Mode}, RelayUrl={RelayUrl}, SignTool={SignTool}.",
             opt.AgentId ?? "(none)",
             opt.SigningExecution,
             opt.RelayUrl,
-            SignToolCommandBuilder.DescribeResolution(opt.SignToolPath));
+            SignToolCommandBuilder.DescribeResolution(opt.SignToolPath, extraDirs));
 
         // Use IHttpClientFactory for base address + agent auth; per-job calls get their own auth header
         using var agentHttp = _httpFactory.CreateClient("SignRelayAgent");

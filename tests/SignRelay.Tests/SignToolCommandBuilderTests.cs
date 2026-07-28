@@ -109,4 +109,94 @@ public sealed class SignToolCommandBuilderTests
         var after = SignToolCommandBuilder.BuildSignArguments("file.exe", null, null, null, ["", "  "]);
         Assert.Equal(before, after);
     }
+
+    [Fact]
+    public void TryResolveDirectSignTool_ExtraDirectory_TakesPrecedenceOverMissingPath()
+    {
+        var dir = Directory.CreateTempSubdirectory("signrelay-extra-");
+        try
+        {
+            var tool = Path.Combine(dir.FullName, "signtool.exe");
+            File.WriteAllBytes(tool, [0]);
+
+            Assert.True(SignToolCommandBuilder.TryResolveDirectSignTool(
+                configuredPath: null,
+                out var path,
+                extraSearchDirectories: [dir.FullName]));
+            Assert.Equal(Path.GetFullPath(tool), path);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TryResolveWdkWhere_ExtraDirectory_FindsExe()
+    {
+        var dir = Directory.CreateTempSubdirectory("signrelay-wdk-");
+        try
+        {
+            var tool = Path.Combine(dir.FullName, "wdkwhere.exe");
+            File.WriteAllBytes(tool, [0]);
+
+            Assert.True(SignToolCommandBuilder.TryResolveWdkWhere(
+                out var path,
+                out var requiresCmd,
+                extraSearchDirectories: [dir.FullName]));
+            Assert.Equal(Path.GetFullPath(tool), path);
+            Assert.False(requiresCmd);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TryResolveDirectSignTool_EmptyExtraDirectory_DoesNotInventHit()
+    {
+        var empty = Directory.CreateTempSubdirectory("signrelay-empty-");
+        try
+        {
+            // An empty extra dir must never satisfy resolution by itself. Process PATH may still
+            // resolve signtool on developer machines — only assert the empty dir contributed nothing
+            // when an explicit missing configured path is supplied and resolution somehow succeeds.
+            var missing = Path.Combine(empty.FullName, "does-not-exist-signtool.exe");
+            if (SignToolCommandBuilder.TryResolveDirectSignTool(
+                    configuredPath: missing,
+                    out var path,
+                    extraSearchDirectories: [empty.FullName]))
+            {
+                Assert.DoesNotContain(
+                    empty.FullName,
+                    path,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        finally
+        {
+            empty.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DescribeResolution_ExtraDirectory_ReportsPath()
+    {
+        var dir = Directory.CreateTempSubdirectory("signrelay-desc-");
+        try
+        {
+            var tool = Path.Combine(dir.FullName, "signtool.exe");
+            File.WriteAllBytes(tool, [0]);
+
+            var desc = SignToolCommandBuilder.DescribeResolution(
+                configuredPath: null,
+                extraSearchDirectories: [dir.FullName]);
+            Assert.Contains(Path.GetFullPath(tool), desc, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
 }

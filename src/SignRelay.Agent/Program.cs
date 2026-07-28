@@ -110,4 +110,5 @@ static void ConfigureWindowsEventLog(HostApplicationBuilder builder)
     });
 #pragma warning restore CA1416
     builder.Logging.AddFilter<EventLogLoggerProvider>(null, LogLevel.Information);
+    builder.Logging.AddFilter<EventLogLoggerProvider>("System.Net.Http.HttpClient", LogLevel.Warning);
 }

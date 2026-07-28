@@ -412,6 +412,7 @@ public static class ServiceCommands
         string? relayUrl = null;
         string? token = null;
         string? signToolPath = null;
+        var signingMode = "Auto";
 
         if (File.Exists(AgentPaths.MachineSettingsFile))
         {
@@ -426,7 +427,10 @@ public static class ServiceCommands
                     if (section.TryGetProperty("AgentId", out var id))
                         Console.WriteLine($"AgentId:       {id.GetString()}");
                     if (section.TryGetProperty("SigningExecution", out var mode))
-                        Console.WriteLine($"Signing mode:  {mode.GetString()}");
+                    {
+                        signingMode = mode.GetString() ?? "Auto";
+                        Console.WriteLine($"Signing mode:  {signingMode}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -437,12 +441,27 @@ public static class ServiceCommands
 
         Console.WriteLine($"RelayUrl:      {relayUrl ?? "(not set)"}");
 
-        if (SignToolCommandBuilder.TryResolveDirectSignTool(signToolPath, out var direct))
+        // status runs as the invoking user, not LocalSystem — probe the same extra dirs the
+        // service uses (SDK bins + console-user PATH/.dotnet/tools when interactive) and note the caveat.
+        InteractiveUserProcessLauncher? interactiveProbe = null;
+        var probeInteractive = !string.Equals(signingMode, "SameProcess", StringComparison.OrdinalIgnoreCase)
+                               && OperatingSystem.IsWindows();
+        if (probeInteractive)
+            interactiveProbe = new InteractiveUserProcessLauncher(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<InteractiveUserProcessLauncher>.Instance);
+
+        var extraDirs = SignToolSearchPaths.Build(interactiveProbe);
+
+        if (SignToolCommandBuilder.TryResolveDirectSignTool(signToolPath, out var direct, extraDirs))
             Console.WriteLine($"signtool:      {direct} (direct)");
-        else if (SignToolCommandBuilder.TryResolveWdkWhere(out var wdk, out var needsCmd))
+        else if (SignToolCommandBuilder.TryResolveWdkWhere(out var wdk, out var needsCmd, extraDirs))
             Console.WriteLine($"signtool:      via wdkwhere ({wdk}{(needsCmd ? " via cmd.exe" : "")})");
         else
             Console.WriteLine("signtool:      NOT FOUND (set SignToolPath, PATH, or install wdkwhere)");
+
+        Console.WriteLine(
+            "              (status uses this console's view; the LocalSystem service also probes the " +
+            "active console user's PATH / .dotnet\\tools and Windows SDK bins)");
 
         if (!string.IsNullOrWhiteSpace(relayUrl))
         {

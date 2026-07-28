@@ -43,16 +43,26 @@ public sealed class SignToolRunner
     {
         var signArgs = SignToolCommandBuilder.BuildSignArguments(filePath, thumbprint, subjectName, timestampUrl, extraArgs);
 
-        if (!SignToolCommandBuilder.TryResolveCommand(signToolPath, signArgs, out var executable, out var argv))
+        var opt = _opt.Value;
+        var useInteractive = SigningExecutionHelper.UseInteractiveSigning(opt);
+        var extraDirs = SignToolSearchPaths.Build(useInteractive ? _interactive : null);
+
+        if (!SignToolCommandBuilder.TryResolveCommand(
+                signToolPath, signArgs, out var executable, out var argv, extraDirs))
         {
+            var searchContext = useInteractive
+                ? "console user PATH, .dotnet\\tools, Windows SDK bins, and the service PATH"
+                : "process PATH and Windows SDK bins";
             _log.LogError(
-                "Could not find signtool.exe (configured path or PATH), and wdkwhere was not found on PATH. " +
-                "Install the Windows SDK (signtool), set SignRelayAgent__SignToolPath, or install the global tool: dotnet tool install --global Nefarius.Tools.WDKWhere (see https://github.com/nefarius/wdkwhere).");
+                "Could not find signtool.exe (configured path or {SearchContext}), and wdkwhere was not found. " +
+                "Install the Windows SDK (signtool), set SignRelayAgent__SignToolPath, or install the global tool: " +
+                "dotnet tool install --global Nefarius.Tools.WDKWhere (see https://github.com/nefarius/wdkwhere).",
+                searchContext);
             return 1;
         }
 
-        var opt = _opt.Value;
-        if (SigningExecutionHelper.UseInteractiveSigning(opt) && OperatingSystem.IsWindows() && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        // Keep platform guards at the call site so CA1416 can see them (bool flow is not tracked).
+        if (useInteractive && OperatingSystem.IsWindows() && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var workDir = Path.GetDirectoryName(filePath);
             var logDir = workDir ?? Path.GetTempPath();
