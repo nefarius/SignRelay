@@ -2,6 +2,7 @@ using SignRelay.Server;
 
 namespace SignRelay.Tests;
 
+[Collection(EnvMutatingCollection.Name)]
 public class HealthProbeTests
 {
     [Fact]
@@ -28,6 +29,14 @@ public class HealthProbeTests
         Assert.Equal(8080, HealthProbe.ResolvePort());
     }
 
+    [Fact]
+    public void ResolvePort_skips_https_entries_before_http()
+    {
+        using var _http = new EnvVarScope("ASPNETCORE_HTTP_PORTS", null);
+        using var _urls = new EnvVarScope("ASPNETCORE_URLS", "https://0.0.0.0:8443;http://0.0.0.0:8080");
+        Assert.Equal(8080, HealthProbe.ResolvePort());
+    }
+
     private sealed class EnvVarScope : IDisposable
     {
         private readonly string _name;
@@ -42,4 +51,14 @@ public class HealthProbeTests
 
         public void Dispose() => Environment.SetEnvironmentVariable(_name, _previous);
     }
+}
+
+/// <summary>
+/// Serializes tests that mutate process-wide environment variables so they cannot
+/// race other classes in the assembly.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class EnvMutatingCollection
+{
+    public const string Name = "EnvMutating";
 }

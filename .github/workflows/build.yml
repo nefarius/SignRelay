@@ -68,11 +68,13 @@ jobs:
             status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' signrelay-ci)
             echo "Attempt $i: Docker Health=$status"
             if [ "$status" = "healthy" ]; then
-              curl -sf http://localhost:18080/health
-              echo
-              echo "Health check passed (Docker + HTTP)."
-              docker stop signrelay-ci
-              exit 0
+              if curl -sf http://localhost:18080/health; then
+                echo
+                echo "Health check passed (Docker + HTTP)."
+                docker stop signrelay-ci
+                exit 0
+              fi
+              echo "Docker reports healthy but HTTP /health failed; retrying."
             fi
             sleep 2
           done

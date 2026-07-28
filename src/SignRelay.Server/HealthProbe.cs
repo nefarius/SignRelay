@@ -24,7 +24,8 @@ internal static class HealthProbe
     }
 
     /// <summary>
-    /// Resolves the listen port from ASPNETCORE_HTTP_PORTS, then ASPNETCORE_URLS, else 8080.
+    /// Resolves the HTTP listen port from ASPNETCORE_HTTP_PORTS, then HTTP entries in
+    /// ASPNETCORE_URLS (HTTPS entries are ignored — the probe always uses HTTP), else 8080.
     /// </summary>
     internal static int ResolvePort()
     {
@@ -48,6 +49,7 @@ internal static class HealthProbe
                     .Replace("://+", "://localhost", StringComparison.Ordinal)
                     .Replace("://*", "://localhost", StringComparison.Ordinal);
                 if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+                    && uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
                     && uri.Port is > 0 and <= 65535)
                     return uri.Port;
             }
