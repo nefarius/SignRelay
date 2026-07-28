@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.IO.Compression;
+using System.Security.Cryptography;
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Common.Tooling;
@@ -29,6 +31,7 @@ public sealed class Build : NukeBuild
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
     static AbsolutePath PackagesDirectory => ArtifactsDirectory / "packages";
     static AbsolutePath PublishRoot => ArtifactsDirectory / "publish";
+    static AbsolutePath ReleaseDirectory => ArtifactsDirectory / "release";
 
     static AbsolutePath Src => RootDirectory / "src";
     static AbsolutePath ContractsProj => Src / "SignRelay.Contracts" / "SignRelay.Contracts.csproj";
@@ -140,6 +143,10 @@ public sealed class Build : NukeBuild
                 .SetOutput(outDir));
         });
 
+    /// <summary>
+    /// Publishes a self-contained win-x64 agent (no .NET runtime required on the signing machine).
+    /// Not single-file — keeps P/Invoke and service install paths simple.
+    /// </summary>
     Target PublishAgent => _ => _
         .DependsOn(Clean)
         .Executes(() =>
@@ -148,6 +155,8 @@ public sealed class Build : NukeBuild
             DotNetPublish(s => s
                 .SetProject(AgentProj)
                 .SetConfiguration(Configuration)
+                .SetRuntime("win-x64")
+                .SetSelfContained(true)
                 .SetOutput(outDir));
         });
 
@@ -158,4 +167,45 @@ public sealed class Build : NukeBuild
     /// <summary>Same outputs as <see cref="Publish"/> (aggregate alias).</summary>
     Target All => _ => _
         .DependsOn(Publish);
+
+    /// <summary>
+    /// Produces release archives under <c>artifacts/release</c>:
+    /// SignRelay.Agent-&lt;version&gt;-win-x64.zip, SignRelay.Server-&lt;version&gt;.zip, checksums.txt.
+    /// </summary>
+    Target Release => _ => _
+        .DependsOn(PublishAgent, PublishServer)
+        .Executes(() =>
+        {
+            var version = string.IsNullOrWhiteSpace(MinVerVersionOverride)
+                ? QueryMsBuildVersion(AgentProj)
+                : MinVerVersionOverride.Trim();
+            if (string.IsNullOrWhiteSpace(version))
+                throw new InvalidOperationException("Could not resolve a version for release archives.");
+
+            // Strip a leading 'v' if someone passed a git tag as MinVerVersionOverride
+            if (version.StartsWith('v') || version.StartsWith('V'))
+                version = version[1..];
+
+            ReleaseDirectory.CreateOrCleanDirectory();
+
+            var agentZip = ReleaseDirectory / $"SignRelay.Agent-{version}-win-x64.zip";
+            var serverZip = ReleaseDirectory / $"SignRelay.Server-{version}.zip";
+
+            ZipFile.CreateFromDirectory(PublishRoot / "SignRelay.Agent", agentZip, CompressionLevel.Optimal, includeBaseDirectory: false);
+            ZipFile.CreateFromDirectory(PublishRoot / "SignRelay.Server", serverZip, CompressionLevel.Optimal, includeBaseDirectory: false);
+
+            var checksumPath = ReleaseDirectory / "checksums.txt";
+            File.WriteAllText(checksumPath,
+                $"{Sha256Hex(agentZip)}  {agentZip.Name}{Environment.NewLine}" +
+                $"{Sha256Hex(serverZip)}  {serverZip.Name}{Environment.NewLine}");
+
+            Serilog.Log.Information("Release archives written to {Dir}", ReleaseDirectory);
+        });
+
+    static string Sha256Hex(AbsolutePath file)
+    {
+        using var stream = File.OpenRead(file);
+        var hash = SHA256.HashData(stream);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
 }

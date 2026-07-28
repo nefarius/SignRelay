@@ -13,16 +13,17 @@
 
 ### NUKE targets (pack & publish)
 
-Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/packages`**, published apps in **`artifacts/publish/<ProjectName>`**.
+Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/packages`**, published apps in **`artifacts/publish/<ProjectName>`**, release zips in **`artifacts/release`**.
 
 | Target | What it does |
 |--------|----------------|
 | `PackContracts` | `dotnet pack` [SignRelay.Contracts](../src/SignRelay.Contracts/SignRelay.Contracts.csproj) |
 | `PackCli` | `dotnet pack` [SignRelay.Cli](../src/SignRelay.Cli/SignRelay.Cli.csproj) (global tool package) |
 | `PublishServer` | `dotnet publish` [SignRelay.Server](../src/SignRelay.Server/SignRelay.Server.csproj) |
-| `PublishAgent` | `dotnet publish` [SignRelay.Agent](../src/SignRelay.Agent/SignRelay.Agent.csproj) |
+| `PublishAgent` | Self-contained **`win-x64`** publish of [SignRelay.Agent](../src/SignRelay.Agent/SignRelay.Agent.csproj) (no .NET runtime required on the signing machine) |
 | `Publish` | All of the above (default entry target for `dotnet run --project build/...`) |
 | `All` | Same as `Publish` |
+| `Release` | `PublishAgent` + `PublishServer`, then zip + SHA-256 `checksums.txt` under `artifacts/release/` |
 
 **Container image (optional, separate command)** — requires Docker or Podman on `PATH`:
 
@@ -37,6 +38,8 @@ Examples:
 .\build.ps1 Publish
 .\build.ps1 PackCli
 .\build.ps1 PublishServer
+.\build.ps1 PublishAgent
+.\build.ps1 Release
 .\build.ps1 DockerServer
 .\build.ps1 DockerServer --ServerDockerImage myregistry/signrelay:1.0
 .\build.ps1 DockerServer --MinVerVersionOverride 2.0.0
@@ -69,6 +72,7 @@ Equivalent without the scripts:
 ```bash
 dotnet run --project build/_build.csproj -- Publish
 dotnet run --project build/_build.csproj -- DockerServer
+dotnet run --project build/_build.csproj -- Release
 ```
 
 ## Relay server (Docker / Podman / VPS)
@@ -79,7 +83,24 @@ dotnet run --project build/_build.csproj -- DockerServer
   - **`SignRelay__CiToken`** — bearer token used by CI / `signrelay submit --token`.
   - **`SignRelay__AgentToken`** — bearer token used by the Windows agent for lease, upload, and complete.
 - **Podman rootless note**: the container runs as UID 1001. With rootless Podman and a bind-mounted host directory, ensure the host path is owned by or accessible to the subuid-mapped user (`podman unshare chown 1001:1001 ./data`). Named volumes (as in [compose.yml](../docker/compose.yml)) are managed by Podman and do not require manual ownership changes.
-- **Job size and lifetime** — tune `SignRelay__MaxTotalJobBytes` and `SignRelay__JobTimeToLive` (TimeSpan format, e.g. `02:00:00`) in [appsettings.json](../src/SignRelay.Server/appsettings.json) or environment.
+- **Job size and lifetime** — tune in [appsettings.json](../src/SignRelay.Server/appsettings.json) or environment:
+  - `SignRelay__MaxTotalJobBytes` (default 512 MiB). Kestrel **and** multipart form limits are both set to `MaxTotalJobBytes × 2` so large uploads are not capped by ASP.NET Core’s 128 MiB multipart default.
+  - `SignRelay__JobTimeToLive` (TimeSpan, e.g. `02:00:00`)
+  - `SignRelay__ArtifactCleanupDelay` — grace period after terminal state before on-disk artifacts are deleted (default `01:00:00`)
+  - `SignRelay__JobRecordRetention` — how long terminal **SQLite rows** are kept after completion (default `7.00:00:00`). Must be ≥ `ArtifactCleanupDelay`.
+
+### Published container image
+
+Tagged releases push to **Azure Container Registry**:
+
+| Tag | Image |
+| --- | --- |
+| Version | `nefarius.azurecr.io/signrelay:<version>` (e.g. `1.2.3` from tag `v1.2.3`) |
+| Latest | `nefarius.azurecr.io/signrelay:latest` |
+
+Production compose example: [docker-compose.prod.yml](../docker-compose.prod.yml) (`docker login nefarius.azurecr.io` may be required to pull).
+
+**Local compose** ([docker/compose.yml](../docker/compose.yml)) sets `ASPNETCORE_ENVIRONMENT=Development` and is for **local development only** — token validation is relaxed and Swagger is enabled. Do **not** use it in production; use `docker-compose.prod.yml` or set `ASPNETCORE_ENVIRONMENT=Production` with strong tokens (≥ 32 characters).
 
 ### Reverse proxy long reads (SSE)
 
@@ -93,49 +114,82 @@ Without this, the proxy may close the stream while the desktop is still signing,
 
 ## Windows agent
 
-- Run the agent on the machine that holds the code-signing certificate. Configure [appsettings.json](../src/SignRelay.Agent/appsettings.json) or user-secrets / environment:
-  - **`SignRelayAgent__RelayUrl`** — public base URL of the relay (HTTPS in production).
-  - **`SignRelayAgent__AgentToken`** — must match **`SignRelay__AgentToken`** on the server.
-  - **`SignRelayAgent__SignToolPath`** — full path to `signtool.exe` from the Windows SDK. If that file does not exist and `signtool.exe` is not on `PATH`, the agent falls back to **[wdkwhere](https://github.com/nefarius/wdkwhere)** (`wdkwhere run signtool …`), which you can install with `dotnet tool install --global Nefarius.Tools.WDKWhere` ([NuGet](https://www.nuget.org/packages/Nefarius.Tools.WDKWhere)).
-  - **`SignRelayAgent__CertificateThumbprint`** — SHA1 thumbprint of the signing cert (if required by your signing workflow).
-  - **`SignRelayAgent__SigningExecution`** — `Auto` (default), `SameProcess`, or `InteractiveUser`. In **`Auto`**, when the agent runs as a **Windows Service**, `signtool` is launched in the **active console user session** so smart-card prompts, CSP UI, and user certificate stores work. When run from a console (development), signing stays in-process. Use **`InteractiveUser`** to force interactive-session signing if detection misbehaves, or **`SameProcess`** to force in-process signing even under the service.
-  - **`SignRelayAgent__JobStagingRoot`** — optional. When interactive signing is used, job files are staged under this directory (default: **`%ProgramData%\SignRelay\Agent\jobs`**). The service grants the console user access to each job folder. For non-interactive (console) runs, staging remains under `%TEMP%\signrelay\<jobId>`.
-  - **`SignRelayAgent__LoadUserProfileForInteractiveSigning`** — when `true` (default), the user profile is loaded for interactive `signtool` so **Current User** certificate stores resolve correctly.
+**Operator walkthrough (recommended):** [AGENT-SETUP.md](AGENT-SETUP.md) — download release zip, `install` / `status` / `uninstall`, paths, upgrade, troubleshooting.
 
-### Windows Service installation
-
-- Publish the agent (`PublishAgent` / `dotnet publish` on [SignRelay.Agent](../src/SignRelay.Agent/SignRelay.Agent.csproj)), then register a service that runs **`SignRelay.Agent.exe`** (adjust paths to your publish folder):
+### Quick install (self-contained release)
 
 ```powershell
-sc.exe create SignRelayAgent binPath= "C:\Path\To\publish\SignRelay.Agent.exe" start= auto obj= LocalSystem
-sc.exe description SignRelayAgent "SignRelay signing agent"
-sc.exe start SignRelayAgent
+# From an elevated console in the extracted agent directory:
+.\SignRelay.Agent.exe install `
+  --relay-url https://relay.example.com `
+  --token "<agent-token>" `
+  --thumbprint "<sha1-thumbprint>" `
+  --start
+
+.\SignRelay.Agent.exe status
 ```
 
-- **Account**: Use **`LocalSystem`** (the default for `obj= LocalSystem` above) so the service can obtain the active console session user token (`WTSQueryUserToken`). A virtual or network service account typically **cannot** launch processes in the interactive session this way.
+Verbs: **`install`**, **`uninstall`** (`--purge` removes `%ProgramData%\SignRelay\Agent`), **`status`**.
+
+### Configuration
+
+Machine settings written by `install`:
+
+`%ProgramData%\SignRelay\Agent\agent.settings.json`
+
+**Precedence** (highest first): environment variables → machine settings file → `appsettings.json` beside the exe → defaults.
+
+| Key | Purpose |
+| --- | --- |
+| `SignRelayAgent__RelayUrl` | Public base URL of the relay (HTTPS in production) |
+| `SignRelayAgent__AgentToken` | Must match `SignRelay__AgentToken` on the server |
+| `SignRelayAgent__SignToolPath` | Optional full path to `signtool.exe`. If unset/missing: PATH, then [wdkwhere](https://github.com/nefarius/wdkwhere) |
+| `SignRelayAgent__CertificateThumbprint` | SHA1 thumbprint of the signing cert |
+| `SignRelayAgent__TimestampServerUrl` | RFC 3161 timestamp URL |
+| `SignRelayAgent__SigningExecution` | `Auto` (default), `SameProcess`, or `InteractiveUser` |
+| `SignRelayAgent__JobStagingRoot` | Optional. Interactive staging root (default `%ProgramData%\SignRelay\Agent\jobs`) |
+| `SignRelayAgent__LoadUserProfileForInteractiveSigning` | Default `true` — load user profile for Current User cert stores |
+
+**Signing modes:** In **`Auto`**, when the agent runs as a **Windows Service**, `signtool` is launched in the **active console user session** so smart-card prompts, CSP UI, and user certificate stores work. When run from a console (development), signing stays in-process. Use **`InteractiveUser`** to force interactive-session signing, or **`SameProcess`** to force in-process signing even under the service.
+
+**Observability:** rolling logs under `%ProgramData%\SignRelay\Agent\logs\`; Windows Event Log source **SignRelay Agent**.
+
+### Service account and session notes
+
+- **Account**: **`LocalSystem`** so the service can obtain the active console session user token (`WTSQueryUserToken`). A virtual or network service account typically **cannot** launch processes in the interactive session this way.
 - **No logged-on console user**: If nobody is logged on at the physical console, interactive signing cannot start `signtool` in a user session; jobs will fail until a user is logged on.
 - **RDP / multiple sessions**: The implementation targets the **active console session** (`WTSGetActiveConsoleSessionId`). Remote-only or multi-user scenarios may need a different session selection in a future version.
-- **Remove** the service:
+
+### Manual / from-source publish
 
 ```powershell
-sc.exe stop SignRelayAgent
-sc.exe delete SignRelayAgent
+.\build.ps1 PublishAgent
+# Output: artifacts/publish/SignRelay.Agent\ (self-contained win-x64)
+cd artifacts\publish\SignRelay.Agent
+.\SignRelay.Agent.exe install --relay-url ... --token ... --start
 ```
-
-- **Interactive session**: When **`SigningExecution`** is **`Auto`** and the process is a Windows Service, `signtool` runs in the logged-on console user’s session, so smart card or password UI from your CSP should appear on that desktop.
 
 ## CI usage
 
-Install the CLI as a global tool from the packaged NuGet, or invoke the published `SignRelay.Cli` binary. Example:
+Install the CLI as a global tool from NuGet:
 
 ```bash
+dotnet tool install --global Nefarius.Tools.SignRelay
 signrelay submit --server https://relay.example.com --token "$SIGN_RELAY_CI_TOKEN" --output ./signed ./artifacts/MyApp.exe
 ```
 
 Set **`SIGN_RELAY_CI_TOKEN`** to the same value as **`SignRelay__CiToken`** on the server.
+
+Tagged releases (`v*`) also publish:
+
+- NuGet package **Nefarius.Tools.SignRelay**
+- GitHub Release assets: agent zip, server zip, `checksums.txt`
+- Container image `nefarius.azurecr.io/signrelay:<version>` and `:latest`
 
 ## Security checklist
 
 - Use **TLS** in front of the relay; do not expose plaintext tokens on untrusted networks.
 - Rotate **CI** and **agent** tokens independently; they are distinct principals.
 - Restrict who can reach the relay API (firewall / VPN) if possible.
+- Keep agent machine settings under `%ProgramData%` (ACL-restricted); do not commit tokens.
+- Prefer the self-contained agent release over copying framework-dependent builds to signing machines.

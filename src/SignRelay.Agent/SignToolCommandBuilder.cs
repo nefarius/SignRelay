@@ -84,6 +84,26 @@ public static class SignToolCommandBuilder
         return signArgs;
     }
 
+    /// <summary>Describes how signtool will be resolved (for startup diagnostics).</summary>
+    public static string DescribeResolution(string? configuredPath)
+    {
+        if (TryResolveDirectSignTool(configuredPath, out var direct))
+        {
+            var viaConfigured = !string.IsNullOrWhiteSpace(configuredPath)
+                                && File.Exists(configuredPath.Trim());
+            return viaConfigured
+                ? $"explicit path → {direct}"
+                : $"PATH → {direct}";
+        }
+
+        if (TryResolveWdkWhere(out var wdk, out var needsCmd))
+            return needsCmd
+                ? $"wdkwhere (.cmd via cmd.exe) → {wdk}"
+                : $"wdkwhere → {wdk}";
+
+        return "NOT FOUND (set SignToolPath, add signtool to PATH, or install Nefarius.Tools.WDKWhere)";
+    }
+
     /// <summary>Resolves executable and final argv (either direct signtool or wdkwhere run signtool …).</summary>
     public static bool TryResolveCommand(string signToolPath, List<string> signArgs, out string executable, out List<string> argv)
     {

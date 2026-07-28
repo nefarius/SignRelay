@@ -1,3 +1,6 @@
+# LOCAL DEVELOPMENT ONLY.
+# ASPNETCORE_ENVIRONMENT=Development relaxes token validation and enables Swagger.
+# For production, use ../docker-compose.prod.yml (or set Production + strong ≥32-char tokens).
 services:
   signrelay:
     build:

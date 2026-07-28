@@ -42,13 +42,6 @@ public sealed class Worker : BackgroundService
     {
         var opt = _opt.Value;
 
-        if (string.IsNullOrWhiteSpace(opt.AgentToken))
-        {
-            _log.LogError("AgentToken is not configured. The agent will not start.");
-            _lifetime.StopApplication();
-            return;
-        }
-
         if (opt.SigningExecution == SigningExecutionMode.InteractiveUser && !OperatingSystem.IsWindows())
         {
             _log.LogError("SigningExecution=InteractiveUser is only supported on Windows. The agent will not start.");
@@ -56,8 +49,12 @@ public sealed class Worker : BackgroundService
             return;
         }
 
-        _log.LogInformation("SignRelay Agent starting. AgentId={AgentId}, Mode={Mode}.",
-            opt.AgentId ?? "(none)", opt.SigningExecution);
+        _log.LogInformation(
+            "SignRelay Agent starting. AgentId={AgentId}, Mode={Mode}, RelayUrl={RelayUrl}, SignTool={SignTool}.",
+            opt.AgentId ?? "(none)",
+            opt.SigningExecution,
+            opt.RelayUrl,
+            SignToolCommandBuilder.DescribeResolution(opt.SignToolPath));
 
         // Use IHttpClientFactory for base address + agent auth; per-job calls get their own auth header
         using var agentHttp = _httpFactory.CreateClient("SignRelayAgent");
@@ -142,6 +139,7 @@ public sealed class Worker : BackgroundService
             }
         }
 
+        _log.LogInformation("Leased job {JobId} ({FileCount} file(s)).", lease.JobId, lease.Manifest.Files.Count);
         return lease;
     }
 

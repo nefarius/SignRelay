@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using SignRelay.Agent.Options;
+using SignRelay.Agent.Service;
 
 namespace SignRelay.Agent;
 
@@ -20,7 +21,7 @@ public sealed class JobStaging : IJobStaging
         if (SigningExecutionHelper.UseInteractiveSigning(opt))
         {
             var root = string.IsNullOrWhiteSpace(opt.JobStagingRoot)
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "SignRelay", "Agent", "jobs")
+                ? AgentPaths.DefaultJobStagingRoot
                 : opt.JobStagingRoot.Trim();
             return Path.Combine(root, jobId);
         }

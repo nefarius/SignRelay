@@ -150,5 +150,16 @@ public sealed class JobSweeper : BackgroundService
                 _log.LogWarning(ex, "Could not delete artifact directory for job {JobId}.", j.Id);
             }
         }
+
+        // DB retention: purge terminal job rows older than JobRecordRetention so SQLite
+        // does not grow unbounded after on-disk artifacts are gone.
+        var recordCutoff = now - opt.JobRecordRetention;
+        var deleted = await db.Jobs
+            .Where(j => j.Status >= JobStatus.Succeeded && j.CompletedUtc != null && j.CompletedUtc <= recordCutoff)
+            .ExecuteDeleteAsync(ct)
+            .ConfigureAwait(false);
+
+        if (deleted > 0)
+            _log.LogInformation("Purged {Count} terminal job record(s) older than {Cutoff:o}.", deleted, recordCutoff);
     }
 }
