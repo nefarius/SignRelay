@@ -27,10 +27,25 @@ public static class SubmitCommand
 
     public static RootCommand Build()
     {
+        // System.CommandLine has no built-in Uri converter; without CustomParser,
+        // GetValue throws InvalidOperationException for any --server value.
         var server = new Option<Uri>("--server")
         {
             Description = "Base URL of the SignRelay server (e.g. https://relay.example.com)",
-            Required = true
+            Required = true,
+            CustomParser = result =>
+            {
+                var raw = result.Tokens.SingleOrDefault()?.Value;
+                if (raw is null || !Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+                    || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+                    || string.IsNullOrEmpty(uri.Host))
+                {
+                    result.AddError($"Cannot parse argument '{raw}' for option '--server' as an absolute http(s) origin URL.");
+                    return null!;
+                }
+
+                return uri;
+            }
         };
         var token = new Option<string>("--token", "-t")
         {
