@@ -234,7 +234,8 @@ public sealed class InteractiveUserProcessLauncher
                 var cmdLine = new StringBuilder(BuildCommandLine(executable, arguments), 32768);
 
                 _log.LogInformation(
-                    "Launching interactive signtool on winsta0\\default (CSP/PIN UI enabled).");
+                    "Launching interactive process {Executable} on winsta0\\default (CSP/PIN UI enabled).",
+                    executable);
 
                 if (!CreateProcessAsUserW(
                         token.DangerousGetHandle(),
