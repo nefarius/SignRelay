@@ -37,9 +37,10 @@ public static class SubmitCommand
             {
                 var raw = result.Tokens.SingleOrDefault()?.Value;
                 if (raw is null || !Uri.TryCreate(raw, UriKind.Absolute, out var uri)
-                    || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+                    || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+                    || string.IsNullOrEmpty(uri.Host))
                 {
-                    result.AddError($"Cannot parse argument '{raw}' for option '--server' as an absolute http(s) URL.");
+                    result.AddError($"Cannot parse argument '{raw}' for option '--server' as an absolute http(s) origin URL.");
                     return null!;
                 }
 
