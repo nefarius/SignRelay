@@ -22,6 +22,14 @@ public static class SignToolCommandBuilder
         "/u", "/uw"
     };
 
+    /// <summary>Backward-compatible overload without subject-name selection.</summary>
+    public static List<string> BuildSignArguments(
+        string filePath,
+        string? thumbprint,
+        string? timestampUrl,
+        string[]? extraArgs)
+        => BuildSignArguments(filePath, thumbprint, subjectName: null, timestampUrl, extraArgs);
+
     public static List<string> BuildSignArguments(
         string filePath,
         string? thumbprint,

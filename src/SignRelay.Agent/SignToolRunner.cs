@@ -22,6 +22,16 @@ public sealed class SignToolRunner
         _log = log;
     }
 
+    /// <summary>Backward-compatible overload without subject-name selection.</summary>
+    public Task<int> SignAsync(
+        string signToolPath,
+        string filePath,
+        string? thumbprint,
+        string? timestampUrl,
+        string[]? extraArgs,
+        CancellationToken ct)
+        => SignAsync(signToolPath, filePath, thumbprint, subjectName: null, timestampUrl, extraArgs, ct);
+
     public async Task<int> SignAsync(
         string signToolPath,
         string filePath,
