@@ -35,7 +35,7 @@ From an elevated PowerShell session in the extract directory:
 .\SignRelay.Agent.exe install `
   --relay-url https://relay.example.com `
   --token "<agent-token>" `
-  --thumbprint "<sha1-thumbprint>" `
+  --subject-name "Nefarius Software Solutions e.U." `
   --start
 ```
 
@@ -43,7 +43,8 @@ From an elevated PowerShell session in the extract directory:
 | --- | --- | --- |
 | `--relay-url` | Yes | Public base URL of the relay (HTTPS in production) |
 | `--token` | Yes | Must match `SignRelay__AgentToken` on the server |
-| `--thumbprint` | Usually | SHA1 thumbprint of the signing certificate |
+| `--thumbprint` | No | Optional SHA1 thumbprint (`signtool /sha1`); may be combined with `--subject-name` |
+| `--subject-name` | No | Optional certificate subject name (`signtool /n`); may be combined with `--thumbprint` |
 | `--timestamp-url` | No | RFC 3161 timestamp URL (default DigiCert if left in machine config / appsettings) |
 | `--signtool` | No | Full path to `signtool.exe` |
 | `--signing-execution` | No | `Auto` (default), `SameProcess`, or `InteractiveUser` |

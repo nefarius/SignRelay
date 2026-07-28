@@ -123,7 +123,7 @@ Without this, the proxy may close the stream while the desktop is still signing,
 .\SignRelay.Agent.exe install `
   --relay-url https://relay.example.com `
   --token "<agent-token>" `
-  --thumbprint "<sha1-thumbprint>" `
+  --subject-name "Nefarius Software Solutions e.U." `
   --start
 
 .\SignRelay.Agent.exe status
@@ -144,7 +144,8 @@ Machine settings written by `install`:
 | `SignRelayAgent__RelayUrl` | Public base URL of the relay (HTTPS in production) |
 | `SignRelayAgent__AgentToken` | Must match `SignRelay__AgentToken` on the server |
 | `SignRelayAgent__SignToolPath` | Optional full path to `signtool.exe`. If unset/missing: PATH, then [wdkwhere](https://github.com/nefarius/wdkwhere) |
-| `SignRelayAgent__CertificateThumbprint` | SHA1 thumbprint of the signing cert |
+| `SignRelayAgent__CertificateThumbprint` | SHA1 thumbprint of the signing cert (`signtool /sha1`) |
+| `SignRelayAgent__CertificateSubjectName` | Certificate subject name substring (`signtool /n`), e.g. `Nefarius Software Solutions e.U.` |
 | `SignRelayAgent__TimestampServerUrl` | RFC 3161 timestamp URL |
 | `SignRelayAgent__SigningExecution` | `Auto` (default), `SameProcess`, or `InteractiveUser` |
 | `SignRelayAgent__JobStagingRoot` | Optional. Interactive staging root (default `%ProgramData%\SignRelay\Agent\jobs`) |

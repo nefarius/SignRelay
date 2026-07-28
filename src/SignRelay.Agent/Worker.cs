@@ -193,6 +193,7 @@ public sealed class Worker : BackgroundService
                         opt.SignToolPath,
                         dest,
                         opt.CertificateThumbprint,
+                        opt.CertificateSubjectName,
                         opt.TimestampServerUrl,
                         entry.SignToolExtraArgs,
                         ct)

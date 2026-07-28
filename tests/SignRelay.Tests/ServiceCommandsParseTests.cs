@@ -23,6 +23,7 @@ public sealed class ServiceCommandsParseTests
             "--token", "secret-token",
             "--agent-id", "desktop-1",
             "--thumbprint", "ABCD1234",
+            "--subject-name", "Nefarius Software Solutions e.U.",
             "--timestamp-url", "http://ts.example.com",
             "--signtool", @"C:\Tools\signtool.exe",
             "--signing-execution", "InteractiveUser",
@@ -34,6 +35,7 @@ public sealed class ServiceCommandsParseTests
         Assert.Equal("secret-token", o.Token);
         Assert.Equal("desktop-1", o.AgentId);
         Assert.Equal("ABCD1234", o.Thumbprint);
+        Assert.Equal("Nefarius Software Solutions e.U.", o.SubjectName);
         Assert.Equal("http://ts.example.com", o.TimestampUrl);
         Assert.Equal(@"C:\Tools\signtool.exe", o.SignTool);
         Assert.Equal("InteractiveUser", o.SigningExecution);
