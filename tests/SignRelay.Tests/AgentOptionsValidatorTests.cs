@@ -26,6 +26,7 @@ public sealed class AgentOptionsValidatorTests
     [InlineData("   ")]
     [InlineData("not-a-url")]
     [InlineData("ftp://relay.example.com")]
+    [InlineData("http://relay.example.com")]
     public void Invalid_RelayUrl_fails(string url)
     {
         var result = _sut.Validate(null, new AgentOptions
@@ -36,6 +37,21 @@ public sealed class AgentOptionsValidatorTests
 
         Assert.True(result.Failed);
         Assert.Contains(result.Failures!, f => f.Contains("RelayUrl", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("http://localhost:8080")]
+    [InlineData("http://127.0.0.1")]
+    [InlineData("https://relay.example.com")]
+    public void Loopback_http_or_https_RelayUrl_succeeds(string url)
+    {
+        var result = _sut.Validate(null, new AgentOptions
+        {
+            RelayUrl = url,
+            AgentToken = "token",
+        });
+
+        Assert.Equal(ValidateOptionsResult.Success, result);
     }
 
     [Fact]

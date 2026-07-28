@@ -25,6 +25,19 @@ public sealed class SignRelayOptionsValidator : IValidateOptions<SignRelayOption
         if (string.IsNullOrWhiteSpace(options.AgentToken) || options.AgentToken.Length < MinTokenLength)
             errors.Add($"SignRelay:AgentToken must be at least {MinTokenLength} characters.");
 
+        // Duration sanity — fail in every environment (including Development).
+        if (options.ArtifactCleanupDelay < TimeSpan.Zero)
+        {
+            return ValidateOptionsResult.Fail(
+                "SignRelay:ArtifactCleanupDelay must not be negative.");
+        }
+
+        if (options.JobRecordRetention < TimeSpan.Zero)
+        {
+            return ValidateOptionsResult.Fail(
+                "SignRelay:JobRecordRetention must not be negative.");
+        }
+
         // Retention must never be shorter than artifact cleanup — fail in every environment.
         if (options.JobRecordRetention < options.ArtifactCleanupDelay)
         {

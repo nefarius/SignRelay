@@ -82,14 +82,12 @@ internal static class ServiceControl
 
     public static async Task StopAsync(string serviceName, CancellationToken ct = default)
     {
-        var (exit, _, _) = await RunScAsync(["stop", serviceName], ct).ConfigureAwait(false);
+        var (exit, stdout, stderr) = await RunScAsync(["stop", serviceName], ct).ConfigureAwait(false);
         // 1062 = service not started — treat as success for uninstall
-        if (exit is not (0 or 1062))
-        {
-            // Query exit again via stderr text; some sc builds return non-zero with "not started"
-            // Best-effort: ignore stop failure when service is already stopped.
-            _ = exit;
-        }
+        if (exit is 0 or 1062)
+            return;
+
+        throw new InvalidOperationException($"sc stop failed (exit {exit}): {Combine(stdout, stderr)}");
     }
 
     public static async Task DeleteAsync(string serviceName, CancellationToken ct = default)

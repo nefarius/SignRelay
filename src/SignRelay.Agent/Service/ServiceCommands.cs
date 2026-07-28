@@ -229,8 +229,20 @@ public static class ServiceCommands
 
         if (await ServiceControl.ExistsAsync(opt.ServiceName).ConfigureAwait(false))
         {
-            Console.WriteLine($"Service '{opt.ServiceName}' already exists — updating config only.");
+            Console.WriteLine($"Service '{opt.ServiceName}' already exists — updating config and repairing service settings.");
             Console.WriteLine($"Wrote machine settings: {AgentPaths.MachineSettingsFile}");
+            try
+            {
+                await ServiceControl.SetDescriptionAsync(opt.ServiceName, "SignRelay signing agent")
+                    .ConfigureAwait(false);
+                await ServiceControl.ConfigureFailureActionsAsync(opt.ServiceName).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+                return 1;
+            }
+
             if (opt.Start)
             {
                 try

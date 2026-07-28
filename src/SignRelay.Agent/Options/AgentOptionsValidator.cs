@@ -17,6 +17,12 @@ public sealed class AgentOptionsValidator : IValidateOptions<AgentOptions>
         {
             errors.Add("SignRelayAgent:RelayUrl must be an absolute http or https URL.");
         }
+        else if (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)
+        {
+            errors.Add(
+                "SignRelayAgent:RelayUrl must use https for non-loopback hosts " +
+                "(http is only allowed for localhost / loopback).");
+        }
 
         if (options.PollInterval <= TimeSpan.Zero)
             errors.Add("SignRelayAgent:PollInterval must be positive.");

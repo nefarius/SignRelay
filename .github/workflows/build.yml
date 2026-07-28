@@ -158,8 +158,9 @@ jobs:
             -o ./artifacts/publish/SignRelay.Server
 
       - name: Pack release archives
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          VERSION="${{ steps.ver.outputs.version }}"
           mkdir -p ./artifacts/release
           (cd ./artifacts/publish/SignRelay.Agent && zip -r "../../release/SignRelay.Agent-${VERSION}-win-x64.zip" .)
           (cd ./artifacts/publish/SignRelay.Server && zip -r "../../release/SignRelay.Server-${VERSION}.zip" .)
@@ -205,8 +206,9 @@ jobs:
           password: ${{ secrets.AZURE_CONTAINER_REGISTRY_PASSWORD }}
 
       - name: Build and push server image
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          VERSION="${{ steps.ver.outputs.version }}"
           IMAGE="nefarius.azurecr.io/signrelay"
           docker build -f docker/Dockerfile \
             --build-arg "MINVERVERSIONOVERRIDE=${VERSION}" \

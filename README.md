@@ -63,7 +63,7 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for target names (`PackContracts`
 
 ## Installation / usage (operators)
 
-**Server (production image):** `nefarius.azurecr.io/signrelay:latest` — see [`docker-compose.prod.yml`](docker-compose.prod.yml). Set at least:
+**Server (production image):** pin a release tag, e.g. `nefarius.azurecr.io/signrelay:1.0.0` — see [`docker-compose.prod.yml`](docker-compose.prod.yml) (that file may track `:latest` for convenience; prefer a version tag in production). Set at least:
 
 - `SignRelay__CiToken` — bearer token for CI / CLI (≥ 32 characters).
 - `SignRelay__AgentToken` — bearer token for the agent (≥ 32 characters).
