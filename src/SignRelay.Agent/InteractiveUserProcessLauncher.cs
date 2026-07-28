@@ -214,57 +214,72 @@ public sealed class InteractiveUserProcessLauncher
                 profileLoaded = profile.hProfile != IntPtr.Zero;
             }
 
-            var si = new STARTUPINFOW
-            {
-                cb = Marshal.SizeOf<STARTUPINFOW>(),
-                dwFlags = (int)(STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW),
-                wShowWindow = SW_HIDE,
-                hStdInput = hNul,
-                hStdOutput = hOut,
-                hStdError = hErr,
-            };
-
-            var cmdLine = new StringBuilder(BuildCommandLine(executable, arguments), 32768);
-
-            if (!CreateProcessAsUserW(
-                    token.DangerousGetHandle(),
-                    executable,
-                    cmdLine,
-                    IntPtr.Zero,
-                    IntPtr.Zero,
-                    bInheritHandles: true,
-                    CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
-                    env,
-                    workingDirectory,
-                    ref si,
-                    out var pi))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
+            // Must target the interactive desktop. Without lpDesktop=winsta0\default,
+            // CreateProcessAsUser lands on a non-interactive window station and CSP/PIN
+            // dialogs never appear (signtool then fails with 0x800704c7 / ERROR_CANCELLED).
+            // Do not use CREATE_NO_WINDOW or SW_HIDE — both suppress hardware-token UI.
+            var desktopPtr = Marshal.StringToHGlobalUni(@"winsta0\default");
             try
             {
-                CloseHandleIfValid(pi.hThread);
+                var si = new STARTUPINFOW
+                {
+                    cb = Marshal.SizeOf<STARTUPINFOW>(),
+                    lpDesktop = desktopPtr,
+                    dwFlags = (int)STARTF_USESTDHANDLES,
+                    hStdInput = hNul,
+                    hStdOutput = hOut,
+                    hStdError = hErr,
+                };
 
-                await WaitForExitAsync(pi.hProcess, ct).ConfigureAwait(false);
+                var cmdLine = new StringBuilder(BuildCommandLine(executable, arguments), 32768);
 
-                if (!GetExitCodeProcess(pi.hProcess, out var exitCode))
+                _log.LogInformation(
+                    "Launching interactive signtool on winsta0\\default (CSP/PIN UI enabled).");
+
+                if (!CreateProcessAsUserW(
+                        token.DangerousGetHandle(),
+                        executable,
+                        cmdLine,
+                        IntPtr.Zero,
+                        IntPtr.Zero,
+                        bInheritHandles: true,
+                        CREATE_UNICODE_ENVIRONMENT,
+                        env,
+                        workingDirectory,
+                        ref si,
+                        out var pi))
+                {
                     throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
 
-                // Close write ends so log files can be read reliably.
-                CloseHandleIfValid(hNul);
-                hNul = IntPtr.Zero;
-                CloseHandleIfValid(hOut);
-                hOut = IntPtr.Zero;
-                CloseHandleIfValid(hErr);
-                hErr = IntPtr.Zero;
+                try
+                {
+                    CloseHandleIfValid(pi.hThread);
 
-                await LogOutputsAsync(outPath, errPath).ConfigureAwait(false);
-                return (int)exitCode;
+                    await WaitForExitAsync(pi.hProcess, ct).ConfigureAwait(false);
+
+                    if (!GetExitCodeProcess(pi.hProcess, out var exitCode))
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
+
+                    // Close write ends so log files can be read reliably.
+                    CloseHandleIfValid(hNul);
+                    hNul = IntPtr.Zero;
+                    CloseHandleIfValid(hOut);
+                    hOut = IntPtr.Zero;
+                    CloseHandleIfValid(hErr);
+                    hErr = IntPtr.Zero;
+
+                    await LogOutputsAsync(outPath, errPath).ConfigureAwait(false);
+                    return (int)exitCode;
+                }
+                finally
+                {
+                    CloseHandleIfValid(pi.hProcess);
+                }
             }
             finally
             {
-                CloseHandleIfValid(pi.hProcess);
+                Marshal.FreeHGlobal(desktopPtr);
             }
         }
         finally
@@ -478,10 +493,7 @@ public sealed class InteractiveUserProcessLauncher
     private const uint FILE_SHARE_READ = 1;
     private const uint FILE_SHARE_WRITE = 2;
     private const uint STARTF_USESTDHANDLES = 0x00000100;
-    private const uint STARTF_USESHOWWINDOW = 0x00000001;
-    private const ushort SW_HIDE = 0;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
-    private const uint CREATE_NO_WINDOW = 0x08000000;
     private const uint WAIT_OBJECT_0 = 0;
     private const uint WAIT_TIMEOUT = 0x00000102;
     private const uint WAIT_FAILED = 0xFFFFFFFF;
