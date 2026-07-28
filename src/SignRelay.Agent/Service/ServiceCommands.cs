@@ -54,6 +54,7 @@ public static class ServiceCommands
         public string? Token { get; set; }
         public string? AgentId { get; set; }
         public string? Thumbprint { get; set; }
+        public string? SubjectName { get; set; }
         public string? TimestampUrl { get; set; }
         public string? SignTool { get; set; }
         public string? SigningExecution { get; set; }
@@ -98,6 +99,9 @@ public static class ServiceCommands
                     break;
                 case "--thumbprint":
                     o.Thumbprint = RequireValue(args, ref i, a);
+                    break;
+                case "--subject-name":
+                    o.SubjectName = RequireValue(args, ref i, a);
                     break;
                 case "--timestamp-url":
                     o.TimestampUrl = RequireValue(args, ref i, a);
@@ -480,6 +484,8 @@ public static class ServiceCommands
             section["AgentId"] = opt.AgentId.Trim();
         if (!string.IsNullOrWhiteSpace(opt.Thumbprint))
             section["CertificateThumbprint"] = opt.Thumbprint.Trim();
+        if (!string.IsNullOrWhiteSpace(opt.SubjectName))
+            section["CertificateSubjectName"] = opt.SubjectName.Trim();
         if (!string.IsNullOrWhiteSpace(opt.TimestampUrl))
             section["TimestampServerUrl"] = opt.TimestampUrl.Trim();
         if (!string.IsNullOrWhiteSpace(opt.SignTool))
@@ -592,7 +598,8 @@ public static class ServiceCommands
               --relay-url <url>           Public base URL of the relay (required)
               --token <token>             Agent bearer token (required; matches SignRelay__AgentToken)
               --agent-id <id>             Optional agent identifier reported on lease
-              --thumbprint <sha1>         Certificate SHA1 thumbprint
+              --thumbprint <sha1>         Certificate SHA1 thumbprint (signtool /sha1)
+              --subject-name <name>       Certificate subject name (signtool /n)
               --timestamp-url <url>       RFC 3161 timestamp server URL
               --signtool <path>           Full path to signtool.exe
               --signing-execution <mode>  Auto | SameProcess | InteractiveUser

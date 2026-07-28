@@ -22,9 +22,16 @@ public sealed class SignToolRunner
         _log = log;
     }
 
-    public async Task<int> SignAsync(string signToolPath, string filePath, string? thumbprint, string? timestampUrl, string[]? extraArgs, CancellationToken ct)
+    public async Task<int> SignAsync(
+        string signToolPath,
+        string filePath,
+        string? thumbprint,
+        string? subjectName,
+        string? timestampUrl,
+        string[]? extraArgs,
+        CancellationToken ct)
     {
-        var signArgs = SignToolCommandBuilder.BuildSignArguments(filePath, thumbprint, timestampUrl, extraArgs);
+        var signArgs = SignToolCommandBuilder.BuildSignArguments(filePath, thumbprint, subjectName, timestampUrl, extraArgs);
 
         if (!SignToolCommandBuilder.TryResolveCommand(signToolPath, signArgs, out var executable, out var argv))
         {

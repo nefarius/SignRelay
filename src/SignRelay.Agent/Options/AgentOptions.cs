@@ -9,7 +9,15 @@ public sealed class AgentOptions
     public string? AgentId { get; set; }
     /// <summary>Optional full path to <c>signtool.exe</c>. When empty, PATH then wdkwhere are tried.</summary>
     public string SignToolPath { get; set; } = "";
+    /// <summary>Optional SHA1 thumbprint; maps to signtool <c>/sha1</c>.</summary>
     public string? CertificateThumbprint { get; set; }
+
+    /// <summary>
+    /// Optional certificate subject name substring; maps to signtool <c>/n</c>
+    /// (e.g. <c>Nefarius Software Solutions e.U.</c>). Not the issuer (<c>/i</c>).
+    /// </summary>
+    public string? CertificateSubjectName { get; set; }
+
     public string? TimestampServerUrl { get; set; } = "http://timestamp.digicert.com";
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
 

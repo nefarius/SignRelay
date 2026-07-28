@@ -74,7 +74,7 @@ Local Docker/Podman for development only: [`docker/compose.yml`](docker/compose.
 **Agent (Windows):** download `SignRelay.Agent-<version>-win-x64.zip` from [Releases](https://github.com/nefarius/SignRelay/releases), extract, then from an elevated console:
 
 ```powershell
-.\SignRelay.Agent.exe install --relay-url https://relay.example.com --token "<agent-token>" --thumbprint "<sha1>" --start
+.\SignRelay.Agent.exe install --relay-url https://relay.example.com --token "<agent-token>" --subject-name "Nefarius Software Solutions e.U." --start
 .\SignRelay.Agent.exe status
 ```
 

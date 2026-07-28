@@ -25,6 +25,7 @@ public static class SignToolCommandBuilder
     public static List<string> BuildSignArguments(
         string filePath,
         string? thumbprint,
+        string? subjectName,
         string? timestampUrl,
         string[]? extraArgs)
     {
@@ -34,6 +35,12 @@ public static class SignToolCommandBuilder
         {
             signArgs.Add("/sha1");
             signArgs.Add(thumbprint);
+        }
+
+        if (!string.IsNullOrWhiteSpace(subjectName))
+        {
+            signArgs.Add("/n");
+            signArgs.Add(subjectName);
         }
 
         if (!string.IsNullOrWhiteSpace(timestampUrl))
