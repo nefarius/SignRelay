@@ -452,6 +452,16 @@ public static class ServiceCommands
                 var healthUri = new Uri(new Uri(baseUrl), "health");
                 var response = await http.GetAsync(healthUri).ConfigureAwait(false);
                 Console.WriteLine($"Health:        {(int)response.StatusCode} {response.ReasonPhrase} ({healthUri})");
+                if (!response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    var snippet = body.Length <= 120 ? body : body[..120] + "…";
+                    if (!string.IsNullOrWhiteSpace(snippet))
+                        Console.WriteLine($"Health body:   {snippet.Replace('\r', ' ').Replace('\n', ' ').Trim()}");
+                    Console.WriteLine(
+                        "Hint:          Non-2xx from /health often means the reverse proxy has no router " +
+                        "(e.g. Traefik dropped an unhealthy container). Check the relay container health on the VPS.");
+                }
             }
             catch (Exception ex)
             {

@@ -29,7 +29,8 @@ RUN useradd -u 1001 -M -s /sbin/nologin appuser \
     && chown -R appuser:appuser /app /data
 USER appuser
 
+# aspnet runtime images do not ship wget/curl — probe via the app itself.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD wget -qO- http://localhost:8080/health || exit 1
+    CMD ["dotnet", "SignRelay.Server.dll", "--health-check"]
 
 ENTRYPOINT ["dotnet", "SignRelay.Server.dll"]

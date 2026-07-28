@@ -112,6 +112,14 @@ The CI client holds **`GET /api/v1/jobs/{id}/events`** open for the whole signin
 
 Without this, the proxy may close the stream while the desktop is still signing, and the CI step fails.
 
+### Traefik and Docker HEALTHCHECK
+
+Traefik’s Docker provider **removes the router** for containers Docker reports as `unhealthy` or `starting`. The public symptom is Traefik’s own **`404 page not found`** (plain text), not a 502 from the app — TLS may still work if a certificate was issued earlier.
+
+- Confirm with `docker compose ps` / `docker inspect … --format '{{.State.Health.Status}}'`.
+- Omitting `healthcheck:` from compose **does not** disable the image `HEALTHCHECK`. To bypass temporarily: `healthcheck: { disable: true }`, then recreate the container.
+- The image probe is `dotnet SignRelay.Server.dll --health-check` (loopback `GET /health`). Do not use `wget`/`curl` — they are not in the `aspnet` runtime image.
+
 ## Windows agent
 
 **Operator walkthrough (recommended):** [AGENT-SETUP.md](AGENT-SETUP.md) — download release zip, `install` / `status` / `uninstall`, paths, upgrade, troubleshooting.
