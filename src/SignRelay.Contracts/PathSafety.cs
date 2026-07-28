@@ -53,4 +53,21 @@ public static class PathSafety
             : StringComparison.Ordinal;
         return fullPath.StartsWith(rootWithSep, comparison);
     }
+
+    /// <summary>
+    /// Builds a wire-safe relative path for <paramref name="fullPath"/> relative to <paramref name="root"/>.
+    /// Files under <paramref name="root"/> keep their relative path; files outside it (including
+    /// cross-drive absolute paths on Windows) use the file name only.
+    /// </summary>
+    public static string ToWireRelativePath(string root, string fullPath)
+    {
+        if (IsUnderRoot(fullPath, root))
+            return NormalizeRelativePath(Path.GetRelativePath(root, fullPath));
+
+        var name = Path.GetFileName(fullPath);
+        if (string.IsNullOrEmpty(name))
+            throw new InvalidOperationException("Path must include a file name.");
+
+        return NormalizeRelativePath(name);
+    }
 }

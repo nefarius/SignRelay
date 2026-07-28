@@ -172,25 +172,17 @@ public static class SubmitCommand
                 }
             }
 
+            // GetRelativePath does not throw for cross-drive paths on Windows — it returns the
+            // absolute path unchanged, which PathSafety then rejects (drive letter ':').
+            // Files under cwd keep a relative manifest path; everything else uses the file name.
+            var cwdFull = Path.GetFullPath(cwd);
             var relPaths = new List<string>(normalized.Count);
             foreach (var p in normalized)
             {
                 string rel;
                 try
                 {
-                    rel = Path.GetRelativePath(cwd, p);
-                }
-                catch (ArgumentException)
-                {
-                    await Console.Error.WriteLineAsync(
-                        $"Cannot compute a relative path for '{p}' (different drive from working directory). Move the file or run from the same drive.").ConfigureAwait(false);
-                    return 2;
-                }
-
-                // Validate and normalise client-side: reject paths escaping cwd
-                try
-                {
-                    rel = PathSafety.NormalizeRelativePath(rel);
+                    rel = PathSafety.ToWireRelativePath(cwdFull, p);
                 }
                 catch (InvalidOperationException ex)
                 {
@@ -199,6 +191,18 @@ public static class SubmitCommand
                 }
 
                 relPaths.Add(rel);
+            }
+
+            var dupRels = relPaths.GroupBy(r => r, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+            if (dupRels.Count > 0)
+            {
+                await Console.Error.WriteLineAsync(
+                    $"Duplicate manifest path(s) after normalizing inputs: {string.Join(", ", dupRels)}. " +
+                    "Use distinct file names or submit paths under the working directory.").ConfigureAwait(false);
+                return 2;
             }
 
             manifest = new JobManifestDto
