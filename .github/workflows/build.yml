@@ -99,6 +99,18 @@ jobs:
       - name: Pack CLI (global tool NuGet)
         run: dotnet pack src/SignRelay.Cli/SignRelay.Cli.csproj -c Release -o ./artifacts/nuget
 
+      - name: Verify package embeds README (nuget.org README tab)
+        run: |
+          set -euo pipefail
+          nupkg=$(ls ./artifacts/nuget/*.nupkg | head -n1)
+          echo "Inspecting $nupkg"
+          tmp=$(mktemp -d)
+          unzip -q "$nupkg" -d "$tmp"
+          test -f "$tmp/README.md" || { echo "ERROR: README.md missing from nupkg root"; exit 1; }
+          grep -q '<readme>README.md</readme>' "$tmp"/*.nuspec \
+            || { echo "ERROR: nuspec missing <readme>README.md</readme>"; cat "$tmp"/*.nuspec; exit 1; }
+          echo "Embedded README OK ($(wc -c < "$tmp/README.md") bytes)"
+
       - name: NuGet login (OIDC → short-lived API key)
         id: nuget-login
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
@@ -107,3 +119,101 @@ jobs:
 
       - name: Push to NuGet.org
         run: dotnet nuget push ./artifacts/nuget/*.nupkg --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Resolve version
+        id: ver
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
+      - name: Publish agent (self-contained win-x64)
+        run: |
+          dotnet publish src/SignRelay.Agent/SignRelay.Agent.csproj \
+            -c Release -r win-x64 --self-contained true \
+            -o ./artifacts/publish/SignRelay.Agent
+
+      - name: Publish server
+        run: |
+          dotnet publish src/SignRelay.Server/SignRelay.Server.csproj \
+            -c Release \
+            -o ./artifacts/publish/SignRelay.Server
+
+      - name: Pack release archives
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p ./artifacts/release
+          (cd ./artifacts/publish/SignRelay.Agent && zip -r "../../release/SignRelay.Agent-${VERSION}-win-x64.zip" .)
+          (cd ./artifacts/publish/SignRelay.Server && zip -r "../../release/SignRelay.Server-${VERSION}.zip" .)
+          (
+            cd ./artifacts/release
+            sha256sum "SignRelay.Agent-${VERSION}-win-x64.zip" "SignRelay.Server-${VERSION}.zip" > checksums.txt
+            cat checksums.txt
+          )
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@6da8fa9354ddfdc4aeace5fc48d7f679b5214090 # v2.4.1
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/release/SignRelay.Agent-${{ steps.ver.outputs.version }}-win-x64.zip
+            artifacts/release/SignRelay.Server-${{ steps.ver.outputs.version }}.zip
+            artifacts/release/checksums.txt
+
+  image:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve version
+        id: ver
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: nefarius.azurecr.io
+          username: nefarius
+          password: ${{ secrets.AZURE_CONTAINER_REGISTRY_PASSWORD }}
+
+      - name: Build and push server image
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          IMAGE="nefarius.azurecr.io/signrelay"
+          docker build -f docker/Dockerfile \
+            --build-arg "MINVERVERSIONOVERRIDE=${VERSION}" \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:${VERSION}"
+          docker push "${IMAGE}:latest"

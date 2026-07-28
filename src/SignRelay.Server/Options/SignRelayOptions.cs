@@ -18,4 +18,11 @@ public sealed class SignRelayOptions
 
     /// <summary>Grace period after a job reaches a terminal state before its artifacts are deleted from disk.</summary>
     public TimeSpan ArtifactCleanupDelay { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// How long terminal job rows are retained in SQLite after <see cref="ArtifactCleanupDelay"/> has
+    /// already removed on-disk artifacts. Default: 7 days. Must be greater than or equal to
+    /// <see cref="ArtifactCleanupDelay"/>.
+    /// </summary>
+    public TimeSpan JobRecordRetention { get; set; } = TimeSpan.FromDays(7);
 }

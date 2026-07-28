@@ -1,6 +1,7 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -69,15 +70,17 @@ try
     if (builder.Environment.IsDevelopment())
         builder.Services.SwaggerDocument();
 
-    // Kestrel request body size limit — derived from MaxTotalJobBytes (×2 to cover signed uploads)
-    // so the Kestrel cap and the service-layer validation never drift apart.
-    builder.WebHost.ConfigureKestrel((ctx, k) =>
-    {
-        var maxBytes = ctx.Configuration
-            .GetSection(SignRelayOptions.SectionName)
-            .GetValue<long>("MaxTotalJobBytes", 512L * 1024 * 1024);
-        k.Limits.MaxRequestBodySize = maxBytes * 2;
-    });
+    // Request size limits — derived from MaxTotalJobBytes (×2 to cover signed uploads).
+    // Both Kestrel and multipart FormOptions must be raised; ASP.NET Core's default
+    // MultipartBodyLengthLimit is 128 MiB and would otherwise silently cap jobs below
+    // the configured MaxTotalJobBytes (default 512 MiB).
+    var maxJobBytes = builder.Configuration
+        .GetSection(SignRelayOptions.SectionName)
+        .GetValue<long>("MaxTotalJobBytes", 512L * 1024 * 1024);
+    var maxRequestBytes = maxJobBytes * 2;
+
+    builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = maxRequestBytes);
+    builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = maxRequestBytes);
 
     var app = builder.Build();
 

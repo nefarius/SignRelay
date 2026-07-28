@@ -73,7 +73,9 @@ The CLI is a .NET 10 global tool and runs on any platform and architecture where
 
 ## Server and agent setup
 
-See the [SignRelay repository](https://github.com/nefarius/SignRelay) for server deployment, agent configuration, and reverse-proxy setup.
+- Repository: [nefarius/SignRelay](https://github.com/nefarius/SignRelay)
+- Agent install: [docs/AGENT-SETUP.md](https://github.com/nefarius/SignRelay/blob/master/docs/AGENT-SETUP.md)
+- Deployment: [docs/DEPLOYMENT.md](https://github.com/nefarius/SignRelay/blob/master/docs/DEPLOYMENT.md)
 
 ## License
 

@@ -135,14 +135,23 @@ public sealed class JobSweeper : BackgroundService
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+        // Jobs whose artifacts are already gone or were deleted this sweep may have their
+        // DB rows purged once past JobRecordRetention. Failed deletes are excluded so a later
+        // sweep can retry cleanup.
+        var artifactsClearedIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var j in toClean)
         {
             var dir = jobSvc.GetJobArtifactDirectory(j.Id);
             if (!Directory.Exists(dir))
+            {
+                artifactsClearedIds.Add(j.Id);
                 continue;
+            }
+
             try
             {
                 Directory.Delete(dir, recursive: true);
+                artifactsClearedIds.Add(j.Id);
                 _log.LogInformation("Deleted artifacts for job {JobId}.", j.Id);
             }
             catch (Exception ex)
@@ -150,5 +159,23 @@ public sealed class JobSweeper : BackgroundService
                 _log.LogWarning(ex, "Could not delete artifact directory for job {JobId}.", j.Id);
             }
         }
+
+        // DB retention: purge terminal job rows older than JobRecordRetention so SQLite
+        // does not grow unbounded after on-disk artifacts are gone.
+        var recordCutoff = now - opt.JobRecordRetention;
+        var deleted = 0;
+        if (artifactsClearedIds.Count > 0)
+        {
+            deleted = await db.Jobs
+                .Where(j => j.Status >= JobStatus.Succeeded
+                            && j.CompletedUtc != null
+                            && j.CompletedUtc <= recordCutoff
+                            && artifactsClearedIds.Contains(j.Id))
+                .ExecuteDeleteAsync(ct)
+                .ConfigureAwait(false);
+        }
+
+        if (deleted > 0)
+            _log.LogInformation("Purged {Count} terminal job record(s) older than {Cutoff:o}.", deleted, recordCutoff);
     }
 }

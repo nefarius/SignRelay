@@ -31,7 +31,8 @@
         "PackContracts",
         "Publish",
         "PublishAgent",
-        "PublishServer"
+        "PublishServer",
+        "Release"
       ]
     },
     "Verbosity": {

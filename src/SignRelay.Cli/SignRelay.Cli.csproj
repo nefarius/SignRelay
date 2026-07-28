@@ -16,13 +16,15 @@
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>code-signing;signtool;ci;authenticode;dotnet-tool</PackageTags>
+    <!-- Embedded README is required for nuget.org to render the README tab (not the Description fallback). -->
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>NSS-128x128.png</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-    <None Include="..\..\assets\NSS-128x128.png" Pack="true" PackagePath="\" Visible="false" />
+    <!-- PackagePath must place the file at the nupkg root, matching PackageReadmeFile / PackageIcon. -->
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="..\..\assets\NSS-128x128.png" Pack="true" PackagePath="NSS-128x128.png" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>
