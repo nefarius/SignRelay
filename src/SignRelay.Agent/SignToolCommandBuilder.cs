@@ -100,36 +100,128 @@ public static class SignToolCommandBuilder
     }
 
     /// <summary>Describes how signtool will be resolved (for startup diagnostics).</summary>
-    public static string DescribeResolution(string? configuredPath)
+    public static string DescribeResolution(
+        string? configuredPath,
+        IReadOnlyList<string>? extraSearchDirectories = null)
     {
-        if (TryResolveDirectSignTool(configuredPath, out var direct))
-        {
-            var viaConfigured = !string.IsNullOrWhiteSpace(configuredPath)
-                                && File.Exists(configuredPath.Trim());
-            return viaConfigured
-                ? $"explicit path → {direct}"
-                : $"PATH → {direct}";
-        }
+        if (TryResolveDirectSignTool(configuredPath, out var direct, extraSearchDirectories))
+            return $"{DescribeResolutionSource(direct, configuredPath, extraSearchDirectories)} → {direct}";
 
-        if (TryResolveWdkWhere(out var wdk, out var needsCmd))
+        if (TryResolveWdkWhere(out var wdk, out var needsCmd, extraSearchDirectories))
+        {
+            var source = DescribeResolutionSource(wdk, configuredPath: null, extraSearchDirectories);
             return needsCmd
-                ? $"wdkwhere (.cmd via cmd.exe) → {wdk}"
-                : $"wdkwhere → {wdk}";
+                ? $"wdkwhere (.cmd via cmd.exe, {source}) → {wdk}"
+                : $"wdkwhere ({source}) → {wdk}";
+        }
 
         return "NOT FOUND (set SignToolPath, add signtool to PATH, or install Nefarius.Tools.WDKWhere)";
     }
 
-    /// <summary>Resolves executable and final argv (either direct signtool or wdkwhere run signtool …).</summary>
-    public static bool TryResolveCommand(string signToolPath, List<string> signArgs, out string executable, out List<string> argv)
+    /// <summary>
+    /// Identifies whether <paramref name="resolved"/> came from an explicit configured path,
+    /// an extra search directory (SDK / .dotnet\tools / console-user PATH), or the process PATH.
+    /// </summary>
+    internal static string DescribeResolutionSource(
+        string resolved,
+        string? configuredPath,
+        IReadOnlyList<string>? extraSearchDirectories)
     {
-        if (TryResolveDirectSignTool(signToolPath, out var directExe))
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var trimmed = configuredPath.Trim();
+            try
+            {
+                if (File.Exists(trimmed)
+                    && string.Equals(Path.GetFullPath(trimmed), resolved, StringComparison.OrdinalIgnoreCase))
+                    return "explicit path";
+            }
+            catch (ArgumentException)
+            {
+                // fall through
+            }
+            catch (PathTooLongException)
+            {
+                // fall through
+            }
+        }
+
+        var parent = Path.GetDirectoryName(resolved);
+        if (parent is not null && extraSearchDirectories is { Count: > 0 })
+        {
+            string parentFull;
+            try
+            {
+                parentFull = Path.GetFullPath(parent);
+            }
+            catch (ArgumentException)
+            {
+                parentFull = parent;
+            }
+            catch (PathTooLongException)
+            {
+                parentFull = parent;
+            }
+
+            foreach (var extra in extraSearchDirectories)
+            {
+                if (string.IsNullOrWhiteSpace(extra))
+                    continue;
+
+                string extraFull;
+                try
+                {
+                    extraFull = Path.GetFullPath(extra);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
+                catch (PathTooLongException)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(extraFull, parentFull, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var normalized = extraFull.Replace('/', Path.DirectorySeparatorChar);
+                if (normalized.EndsWith(
+                        $"{Path.DirectorySeparatorChar}.dotnet{Path.DirectorySeparatorChar}tools",
+                        StringComparison.OrdinalIgnoreCase))
+                    return ".dotnet\\tools";
+
+                if (normalized.Contains(
+                        $"{Path.DirectorySeparatorChar}Windows Kits{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase)
+                    && normalized.Contains(
+                        $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase))
+                    return "Windows SDK";
+
+                return "extra search";
+            }
+        }
+
+        return "PATH";
+    }
+
+    /// <summary>Resolves executable and final argv (either direct signtool or wdkwhere run signtool …).</summary>
+    public static bool TryResolveCommand(
+        string signToolPath,
+        List<string> signArgs,
+        out string executable,
+        out List<string> argv,
+        IReadOnlyList<string>? extraSearchDirectories = null)
+    {
+        if (TryResolveDirectSignTool(signToolPath, out var directExe, extraSearchDirectories))
         {
             executable = directExe;
             argv = signArgs;
             return true;
         }
 
-        if (TryResolveWdkWhere(out var wdkExe, out var wdkNeedsCmd))
+        if (TryResolveWdkWhere(out var wdkExe, out var wdkNeedsCmd, extraSearchDirectories))
         {
             if (wdkNeedsCmd)
             {
@@ -151,8 +243,11 @@ public static class SignToolCommandBuilder
         return false;
     }
 
-    /// <summary>Resolves an existing signtool.exe from explicit path or PATH.</summary>
-    public static bool TryResolveDirectSignTool(string? configuredPath, out string path)
+    /// <summary>Resolves an existing signtool.exe from explicit path, extra dirs, or PATH.</summary>
+    public static bool TryResolveDirectSignTool(
+        string? configuredPath,
+        out string path,
+        IReadOnlyList<string>? extraSearchDirectories = null)
     {
         if (!string.IsNullOrWhiteSpace(configuredPath))
         {
@@ -164,7 +259,7 @@ public static class SignToolCommandBuilder
             }
         }
 
-        var onPath = FindOnPath("signtool.exe");
+        var onPath = FindOnPath("signtool.exe", extraSearchDirectories);
         if (onPath is not null)
         {
             path = onPath;
@@ -176,10 +271,13 @@ public static class SignToolCommandBuilder
     }
 
     /// <summary>Resolves wdkwhere shim (see https://github.com/nefarius/wdkwhere). Returns whether cmd.exe /c is required.</summary>
-    public static bool TryResolveWdkWhere(out string path, out bool requiresCmd)
+    public static bool TryResolveWdkWhere(
+        out string path,
+        out bool requiresCmd,
+        IReadOnlyList<string>? extraSearchDirectories = null)
     {
         // Prefer .exe — CreateProcess can run it directly
-        var exe = FindOnPath("wdkwhere.exe");
+        var exe = FindOnPath("wdkwhere.exe", extraSearchDirectories);
         if (exe is not null)
         {
             path = exe;
@@ -188,7 +286,7 @@ public static class SignToolCommandBuilder
         }
 
         // .cmd batch files require cmd.exe /c to execute
-        var cmd = FindOnPath("wdkwhere.cmd");
+        var cmd = FindOnPath("wdkwhere.cmd", extraSearchDirectories);
         if (cmd is not null)
         {
             path = cmd;
@@ -201,28 +299,50 @@ public static class SignToolCommandBuilder
         return false;
     }
 
-    private static string? FindOnPath(string fileName)
+    private static string? FindOnPath(string fileName, IReadOnlyList<string>? extraSearchDirectories)
     {
+        if (extraSearchDirectories is { Count: > 0 })
+        {
+            foreach (var dir in extraSearchDirectories)
+            {
+                var found = TryFileInDirectory(dir, fileName);
+                if (found is not null)
+                    return found;
+            }
+        }
+
         var pathVar = Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrEmpty(pathVar))
             return null;
 
         foreach (var raw in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
-            var dir = raw.Trim().Trim('"');
-            if (string.IsNullOrEmpty(dir))
-                continue;
+            var found = TryFileInDirectory(raw.Trim().Trim('"'), fileName);
+            if (found is not null)
+                return found;
+        }
 
-            try
-            {
-                var full = Path.Combine(dir, fileName);
-                if (File.Exists(full))
-                    return Path.GetFullPath(full);
-            }
-            catch (ArgumentException)
-            {
-                // skip invalid path segments
-            }
+        return null;
+    }
+
+    private static string? TryFileInDirectory(string? dir, string fileName)
+    {
+        if (string.IsNullOrEmpty(dir))
+            return null;
+
+        try
+        {
+            var full = Path.Combine(dir, fileName);
+            if (File.Exists(full))
+                return Path.GetFullPath(full);
+        }
+        catch (ArgumentException)
+        {
+            // skip invalid path segments
+        }
+        catch (PathTooLongException)
+        {
+            // skip overlong PATH entries so scanning can continue
         }
 
         return null;

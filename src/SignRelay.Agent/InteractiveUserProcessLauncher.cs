@@ -64,6 +64,64 @@ public sealed class InteractiveUserProcessLauncher
         }
     }
 
+    /// <summary>
+    /// Builds the active console user's environment block and returns it as a case-insensitive
+    /// dictionary of <c>KEY=VALUE</c> pairs. Returns <c>false</c> when no console user is logged on.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    public bool TryGetActiveConsoleUserEnvironment(out IReadOnlyDictionary<string, string>? env)
+    {
+        env = null;
+        if (!OperatingSystem.IsWindows())
+            return false;
+
+        using var token = OpenActiveConsoleUserToken();
+        if (token is null)
+            return false;
+
+        IntPtr block = IntPtr.Zero;
+        try
+        {
+            if (!CreateEnvironmentBlock(out block, token.DangerousGetHandle(), false))
+                return false;
+
+            env = ParseEnvironmentBlock(block);
+            return true;
+        }
+        finally
+        {
+            if (block != IntPtr.Zero)
+                DestroyEnvironmentBlock(block);
+        }
+    }
+
+    /// <summary>Parses a double-NUL-terminated UTF-16 environment block into KEY=VALUE pairs.</summary>
+    internal static IReadOnlyDictionary<string, string> ParseEnvironmentBlock(IntPtr block)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (block == IntPtr.Zero)
+            return result;
+
+        var offset = 0;
+        while (true)
+        {
+            var entry = Marshal.PtrToStringUni(IntPtr.Add(block, offset));
+            if (string.IsNullOrEmpty(entry))
+                break;
+
+            offset += (entry.Length + 1) * sizeof(char);
+
+            var eq = entry.IndexOf('=');
+            // Skip entries that start with '=' (e.g. drive current-directory vars like =C:=C:\...)
+            if (eq <= 0)
+                continue;
+
+            result[entry[..eq]] = entry[(eq + 1)..];
+        }
+
+        return result;
+    }
+
     [SupportedOSPlatform("windows")]
     public async Task<int> RunProcessAsActiveConsoleUserAsync(
         string executable,
