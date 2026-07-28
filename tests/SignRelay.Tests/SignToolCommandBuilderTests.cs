@@ -181,7 +181,7 @@ public sealed class SignToolCommandBuilderTests
     }
 
     [Fact]
-    public void DescribeResolution_ExtraDirectory_ReportsPath()
+    public void DescribeResolution_ExtraDirectory_ReportsPathAndSource()
     {
         var dir = Directory.CreateTempSubdirectory("signrelay-desc-");
         try
@@ -192,7 +192,48 @@ public sealed class SignToolCommandBuilderTests
             var desc = SignToolCommandBuilder.DescribeResolution(
                 configuredPath: null,
                 extraSearchDirectories: [dir.FullName]);
+            Assert.StartsWith("extra search → ", desc, StringComparison.Ordinal);
             Assert.Contains(Path.GetFullPath(tool), desc, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DescribeResolutionSource_DotNetToolsAndSdk_LabelsCorrectly()
+    {
+        var toolsDir = Path.Combine(Path.GetTempPath(), "user", ".dotnet", "tools");
+        var sdkDir = Path.Combine(
+            Path.GetTempPath(), "Windows Kits", "10", "bin", "10.0.22621.0", "x64");
+        var toolsExe = Path.Combine(toolsDir, "signtool.exe");
+        var sdkExe = Path.Combine(sdkDir, "signtool.exe");
+
+        Assert.Equal(
+            ".dotnet\\tools",
+            SignToolCommandBuilder.DescribeResolutionSource(toolsExe, null, [toolsDir]));
+        Assert.Equal(
+            "Windows SDK",
+            SignToolCommandBuilder.DescribeResolutionSource(sdkExe, null, [sdkDir]));
+        Assert.Equal(
+            "PATH",
+            SignToolCommandBuilder.DescribeResolutionSource(toolsExe, null, extraSearchDirectories: null));
+    }
+
+    [Fact]
+    public void DescribeResolutionSource_ExplicitPath_Wins()
+    {
+        var dir = Directory.CreateTempSubdirectory("signrelay-explicit-");
+        try
+        {
+            var tool = Path.Combine(dir.FullName, "signtool.exe");
+            File.WriteAllBytes(tool, [0]);
+            var full = Path.GetFullPath(tool);
+
+            Assert.Equal(
+                "explicit path",
+                SignToolCommandBuilder.DescribeResolutionSource(full, tool, [dir.FullName]));
         }
         finally
         {

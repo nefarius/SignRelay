@@ -52,6 +52,10 @@ public static class SignToolSearchPaths
 
     private static void AddWindowsSdkBins(List<string> dirs, HashSet<string> seen)
     {
+        // Gather versioned dirs from every kits root first, then sort globally so a newer SDK
+        // under Program Files is preferred over an older one under Program Files (x86).
+        var versionDirs = new List<(string Dir, Version Ver)>();
+
         foreach (var kitsRoot in WindowsKitsRoots())
         {
             var binRoot = Path.Combine(kitsRoot, "10", "bin");
@@ -72,15 +76,16 @@ public static class SignToolSearchPaths
                 continue;
             }
 
-            var ordered = versions
-                .Select(d => (Dir: d, Name: Path.GetFileName(d)))
-                .Where(t => Version.TryParse(t.Name, out _))
-                .OrderByDescending(t => Version.Parse(t.Name!))
-                .Select(t => t.Dir);
-
-            foreach (var verDir in ordered)
-                TryAdd(dirs, seen, Path.Combine(verDir, "x64"));
+            foreach (var d in versions)
+            {
+                var name = Path.GetFileName(d);
+                if (Version.TryParse(name, out var ver))
+                    versionDirs.Add((d, ver));
+            }
         }
+
+        foreach (var verDir in versionDirs.OrderByDescending(t => t.Ver).Select(t => t.Dir))
+            TryAdd(dirs, seen, Path.Combine(verDir, "x64"));
     }
 
     private static IEnumerable<string> WindowsKitsRoots()

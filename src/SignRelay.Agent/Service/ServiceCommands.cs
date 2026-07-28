@@ -427,10 +427,7 @@ public static class ServiceCommands
                     if (section.TryGetProperty("AgentId", out var id))
                         Console.WriteLine($"AgentId:       {id.GetString()}");
                     if (section.TryGetProperty("SigningExecution", out var mode))
-                    {
                         signingMode = mode.GetString() ?? "Auto";
-                        Console.WriteLine($"Signing mode:  {signingMode}");
-                    }
                 }
             }
             catch (Exception ex)
@@ -439,10 +436,11 @@ public static class ServiceCommands
             }
         }
 
+        Console.WriteLine($"Signing mode:  {signingMode}");
         Console.WriteLine($"RelayUrl:      {relayUrl ?? "(not set)"}");
 
-        // status runs as the invoking user, not LocalSystem — probe the same extra dirs the
-        // service uses (SDK bins + console-user PATH/.dotnet/tools when interactive) and note the caveat.
+        // Combined probe: calling console PATH plus (for non-SameProcess) active console user
+        // PATH / .dotnet\tools and Windows SDK bins — same extra dirs the service uses.
         InteractiveUserProcessLauncher? interactiveProbe = null;
         var probeInteractive = !string.Equals(signingMode, "SameProcess", StringComparison.OrdinalIgnoreCase)
                                && OperatingSystem.IsWindows();
@@ -460,7 +458,7 @@ public static class ServiceCommands
             Console.WriteLine("signtool:      NOT FOUND (set SignToolPath, PATH, or install wdkwhere)");
 
         Console.WriteLine(
-            "              (status uses this console's view; the LocalSystem service also probes the " +
+            "              (combined probe: this console's PATH plus, when not SameProcess, the " +
             "active console user's PATH / .dotnet\\tools and Windows SDK bins)");
 
         if (!string.IsNullOrWhiteSpace(relayUrl))

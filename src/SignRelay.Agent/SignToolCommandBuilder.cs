@@ -105,20 +105,105 @@ public static class SignToolCommandBuilder
         IReadOnlyList<string>? extraSearchDirectories = null)
     {
         if (TryResolveDirectSignTool(configuredPath, out var direct, extraSearchDirectories))
-        {
-            var viaConfigured = !string.IsNullOrWhiteSpace(configuredPath)
-                                && File.Exists(configuredPath.Trim());
-            return viaConfigured
-                ? $"explicit path → {direct}"
-                : $"PATH → {direct}";
-        }
+            return $"{DescribeResolutionSource(direct, configuredPath, extraSearchDirectories)} → {direct}";
 
         if (TryResolveWdkWhere(out var wdk, out var needsCmd, extraSearchDirectories))
+        {
+            var source = DescribeResolutionSource(wdk, configuredPath: null, extraSearchDirectories);
             return needsCmd
-                ? $"wdkwhere (.cmd via cmd.exe) → {wdk}"
-                : $"wdkwhere → {wdk}";
+                ? $"wdkwhere (.cmd via cmd.exe, {source}) → {wdk}"
+                : $"wdkwhere ({source}) → {wdk}";
+        }
 
         return "NOT FOUND (set SignToolPath, add signtool to PATH, or install Nefarius.Tools.WDKWhere)";
+    }
+
+    /// <summary>
+    /// Identifies whether <paramref name="resolved"/> came from an explicit configured path,
+    /// an extra search directory (SDK / .dotnet\tools / console-user PATH), or the process PATH.
+    /// </summary>
+    internal static string DescribeResolutionSource(
+        string resolved,
+        string? configuredPath,
+        IReadOnlyList<string>? extraSearchDirectories)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var trimmed = configuredPath.Trim();
+            try
+            {
+                if (File.Exists(trimmed)
+                    && string.Equals(Path.GetFullPath(trimmed), resolved, StringComparison.OrdinalIgnoreCase))
+                    return "explicit path";
+            }
+            catch (ArgumentException)
+            {
+                // fall through
+            }
+            catch (PathTooLongException)
+            {
+                // fall through
+            }
+        }
+
+        var parent = Path.GetDirectoryName(resolved);
+        if (parent is not null && extraSearchDirectories is { Count: > 0 })
+        {
+            string parentFull;
+            try
+            {
+                parentFull = Path.GetFullPath(parent);
+            }
+            catch (ArgumentException)
+            {
+                parentFull = parent;
+            }
+            catch (PathTooLongException)
+            {
+                parentFull = parent;
+            }
+
+            foreach (var extra in extraSearchDirectories)
+            {
+                if (string.IsNullOrWhiteSpace(extra))
+                    continue;
+
+                string extraFull;
+                try
+                {
+                    extraFull = Path.GetFullPath(extra);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
+                catch (PathTooLongException)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(extraFull, parentFull, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var normalized = extraFull.Replace('/', Path.DirectorySeparatorChar);
+                if (normalized.EndsWith(
+                        $"{Path.DirectorySeparatorChar}.dotnet{Path.DirectorySeparatorChar}tools",
+                        StringComparison.OrdinalIgnoreCase))
+                    return ".dotnet\\tools";
+
+                if (normalized.Contains(
+                        $"{Path.DirectorySeparatorChar}Windows Kits{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase)
+                    && normalized.Contains(
+                        $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase))
+                    return "Windows SDK";
+
+                return "extra search";
+            }
+        }
+
+        return "PATH";
     }
 
     /// <summary>Resolves executable and final argv (either direct signtool or wdkwhere run signtool …).</summary>
@@ -254,6 +339,10 @@ public static class SignToolCommandBuilder
         catch (ArgumentException)
         {
             // skip invalid path segments
+        }
+        catch (PathTooLongException)
+        {
+            // skip overlong PATH entries so scanning can continue
         }
 
         return null;
