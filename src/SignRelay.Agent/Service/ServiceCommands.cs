@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SignRelay.Agent.Options;
@@ -450,8 +451,19 @@ public static class ServiceCommands
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                 var baseUrl = relayUrl.TrimEnd('/') + "/";
                 var healthUri = new Uri(new Uri(baseUrl), "health");
-                var response = await http.GetAsync(healthUri).ConfigureAwait(false);
+                using var response = await http
+                    .GetAsync(healthUri, HttpCompletionOption.ResponseHeadersRead)
+                    .ConfigureAwait(false);
                 Console.WriteLine($"Health:        {(int)response.StatusCode} {response.ReasonPhrase} ({healthUri})");
+                if (!response.IsSuccessStatusCode)
+                {
+                    var snippet = await ReadBoundedTextAsync(response.Content, maxChars: 120).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(snippet))
+                        Console.WriteLine($"Health body:   {snippet.Replace('\r', ' ').Replace('\n', ' ').Trim()}");
+                    Console.WriteLine(
+                        "Hint:          Non-2xx from /health often means the reverse proxy has no router " +
+                        "(e.g. Traefik dropped an unhealthy container). Check the relay container health on the VPS.");
+                }
             }
             catch (Exception ex)
             {
@@ -587,6 +599,28 @@ public static class ServiceCommands
         if (i + 1 >= args.Length || args[i + 1].StartsWith('-'))
             throw new ArgumentException($"Missing value for {flag}.");
         return args[++i];
+    }
+
+    /// <summary>
+    /// Reads at most <paramref name="maxChars"/> characters from the response body.
+    /// Appends an ellipsis when more content was available.
+    /// </summary>
+    private static async Task<string> ReadBoundedTextAsync(HttpContent content, int maxChars)
+    {
+        await using var stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
+        using var reader = new StreamReader(
+            stream,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true,
+            bufferSize: 256,
+            leaveOpen: true);
+        var buffer = new char[maxChars + 1];
+        var read = await reader.ReadBlockAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+        if (read <= 0)
+            return string.Empty;
+        if (read <= maxChars)
+            return new string(buffer, 0, read);
+        return new string(buffer, 0, maxChars) + "…";
     }
 
     private static void PrintInstallHelp()

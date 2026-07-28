@@ -115,6 +115,7 @@ Machine settings under `%ProgramData%` are left alone. Re-run `install` only whe
 | Jobs fail until someone logs on | Interactive signing needs an **active console** session (`WTSGetActiveConsoleSessionId`) |
 | RDP-only / multi-session signing fails | Unsupported today — console session only; see [DEPLOYMENT.md](DEPLOYMENT.md) |
 | `signtool: NOT FOUND` in `status` | Install Windows SDK, set `--signtool`, or install wdkwhere |
+| `Health: 404 Not Found` (body like `404 page not found`) | Usually the reverse proxy has no router for the relay — often Traefik dropped an `unhealthy` container; see [DEPLOYMENT.md](DEPLOYMENT.md) (Traefik and Docker HEALTHCHECK). Verify `RelayUrl` and that `/health` is reachable first; this is usually not an agent config error. |
 | Agent stops after 401/403 | Token mismatch with `SignRelay__AgentToken` |
 | Service running but no logs | Check Event Viewer and `%ProgramData%\SignRelay\Agent\logs\` |
 | Smart-card UI never appears | Ensure `SigningExecution` is `Auto` or `InteractiveUser`, service is LocalSystem, and a console user is logged on |

@@ -62,20 +62,27 @@ jobs:
             -e SignRelay__AgentToken=agent-test-token-12345678 \
             -p 18080:8080 \
             signrelay/server:ci
-          # Wait for the container to become healthy
-          for i in $(seq 1 20); do
-            if curl -sf http://localhost:18080/health; then
-              echo "Health check passed."
-              break
-            fi
-            if [ "$i" -eq 20 ]; then
-              echo "Container never became healthy."
-              docker logs signrelay-ci
-              exit 1
+          # Wait until Docker reports the IMAGE HEALTHCHECK as healthy (not just host curl).
+          # Traefik drops unhealthy containers from routing; a host-only probe would miss that.
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' signrelay-ci)
+            echo "Attempt $i: Docker Health=$status"
+            if [ "$status" = "healthy" ]; then
+              if curl -sf http://localhost:18080/health; then
+                echo
+                echo "Health check passed (Docker + HTTP)."
+                docker stop signrelay-ci
+                exit 0
+              fi
+              echo "Docker reports healthy but HTTP /health failed; retrying."
             fi
             sleep 2
           done
-          docker stop signrelay-ci
+          echo "Container never became healthy."
+          docker inspect --format '{{json .State.Health}}' signrelay-ci || true
+          docker logs signrelay-ci
+          docker stop signrelay-ci || true
+          exit 1
 
   publish-cli:
     runs-on: ubuntu-latest

@@ -7,11 +7,16 @@ using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Sinks.SystemConsole.Themes;
 using SignRelay.Contracts;
+using SignRelay.Server;
 using SignRelay.Server.Auth;
 using SignRelay.Server.Data;
 using SignRelay.Server.Networking;
 using SignRelay.Server.Options;
 using SignRelay.Server.Services;
+
+// Docker HEALTHCHECK: probe the already-running instance and exit (do not start the host).
+if (args.Contains("--health-check", StringComparer.Ordinal))
+    return await HealthProbe.RunAsync().ConfigureAwait(false);
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -117,8 +122,11 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "Host terminated unexpectedly");
+    return 1;
 }
 finally
 {
     Log.CloseAndFlush();
 }
+
+return 0;

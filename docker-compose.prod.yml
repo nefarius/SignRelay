@@ -17,7 +17,10 @@ services:
       - web
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      # Image HEALTHCHECK is the same; compose override keeps local/prod in sync.
+      # Omitting this block does NOT disable the image HEALTHCHECK — use
+      # `healthcheck: { disable: true }` for that (e.g. temporary Traefik unblock).
+      test: ["CMD", "dotnet", "SignRelay.Server.dll", "--health-check"]
       interval: 30s
       timeout: 5s
       start_period: 15s
