@@ -29,6 +29,7 @@
     <ProjectReference Include="..\..\src\SignRelay.Contracts\SignRelay.Contracts.csproj" />
     <ProjectReference Include="..\..\src\SignRelay.Server\SignRelay.Server.csproj" />
     <ProjectReference Include="..\..\src\SignRelay.Agent\SignRelay.Agent.csproj" />
+    <ProjectReference Include="..\..\src\SignRelay.Cli\SignRelay.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>

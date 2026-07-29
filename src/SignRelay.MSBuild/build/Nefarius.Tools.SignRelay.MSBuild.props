@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <!-- Opt-in: local builds must not hit the network. -->
+    <SignRelayEnabled Condition="'$(SignRelayEnabled)' == ''">false</SignRelayEnabled>
+    <!-- When true and no SignRelayFile items are defined, prefer PublishDir then TargetPath. -->
+    <SignRelaySignTargetPath Condition="'$(SignRelaySignTargetPath)' == ''">true</SignRelaySignTargetPath>
+    <!-- Prefer env SIGN_RELAY_CI_TOKEN when property is empty. -->
+    <SignRelayToken Condition="'$(SignRelayToken)' == ''">$(SIGN_RELAY_CI_TOKEN)</SignRelayToken>
+    <SignRelayTimeout Condition="'$(SignRelayTimeout)' == ''">00:45:00</SignRelayTimeout>
+    <!-- Optional absolute path to signrelay.exe; otherwise resolve from PATH / ~/.dotnet/tools. -->
+    <SignRelayToolPath Condition="'$(SignRelayToolPath)' == ''"></SignRelayToolPath>
+    <!-- AfterTargets hook. Override to AfterBuild if you do not Publish. -->
+    <SignRelayAfterTargets Condition="'$(SignRelayAfterTargets)' == ''">Publish</SignRelayAfterTargets>
+    <SignRelayStampFile Condition="'$(SignRelayStampFile)' == ''">$(IntermediateOutputPath)signrelay.stamp</SignRelayStampFile>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Content-only package; TFM is unused for consumers. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <IsPackable>true</IsPackable>
+    <NoWarn>$(NoWarn);NU5128;NU5127</NoWarn>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+
+    <PackageId>Nefarius.Tools.SignRelay.MSBuild</PackageId>
+    <Description>MSBuild targets that invoke signrelay submit after Publish. Opt-in via SignRelayEnabled=true. Keeps code-signing keys off the CI runner.</Description>
+    <Authors>Benjamin Hoeglinger-Stelzer</Authors>
+    <Company>Nefarius</Company>
+    <PackageProjectUrl>https://github.com/nefarius/SignRelay</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/nefarius/SignRelay</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>code-signing;signtool;ci;authenticode;msbuild;signrelay</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>NSS-128x128.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="build\**" Pack="true" PackagePath="build\" />
+    <None Include="README.md" Pack="true" PackagePath="README.md" />
+    <None Include="..\..\assets\NSS-128x128.png" Pack="true" PackagePath="NSS-128x128.png" Visible="false" />
+  </ItemGroup>
+
+</Project>
