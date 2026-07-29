@@ -90,16 +90,26 @@ Either `--output` or `--in-place` must be specified, but not both.
 | Tool | Version |
 | --- | --- |
 | [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | **10.0.100** minimum (`rollForward: latestFeature` in repo [`global.json`](https://github.com/nefarius/SignRelay/blob/master/global.json)) |
-| Git | **2.40+** recommended (MinVer tags use `v` prefix) |
+| Git | **2.40+** (required; MinVer release tags use a `v` prefix, e.g. `v1.0.0`) |
+
+Pin the source tree to a release tag (replace `v1.0.0` with the tag you are building). This repository does not ship NuGet `packages.lock.json` files, so restore is not `--locked-mode`.
 
 ```bash
-git clone https://github.com/nefarius/SignRelay.git
+git clone --branch v1.0.0 --depth 1 https://github.com/nefarius/SignRelay.git
 cd SignRelay
 dotnet restore SignRelay.sln
 dotnet pack src/SignRelay.Cli/SignRelay.Cli.csproj -c Release -o ./artifacts/nuget
 ```
 
-Or via NUKE: `./build.sh PackCli` / `.\build.ps1 PackCli`.
+Or via NUKE:
+
+```bash
+./build.sh PackCli
+```
+
+```powershell
+.\build.ps1 PackCli
+```
 
 ## Support policy
 
