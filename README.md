@@ -3,6 +3,7 @@
 [![Build](https://github.com/nefarius/SignRelay/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nefarius/SignRelay/actions/workflows/build.yml)
 [![.NET](https://img.shields.io/badge/.NET-10.0-blue)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Assisted by Cursor AI](https://img.shields.io/badge/Assisted%20by-Cursor%20AI-8B5CF6?style=flat)](https://cursor.com/)
 
 CI submits files to a small relay; a Windows agent runs `signtool` with your certificate and returns signed artifacts—without putting the signing key on the CI runner.
 
