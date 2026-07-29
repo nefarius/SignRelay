@@ -39,6 +39,7 @@ signrelay submit --server <url> [--token <token>] (--output <dir> | --in-place) 
 - `--in-place` — Overwrite each input file with its signed copy. Mutually exclusive with `--output`.
 - `--timeout <timespan>` — Maximum time to wait for signing to complete. Default: `00:45:00` (45 minutes).
 - `--allow-insecure` — Allow `http://` server URLs. Not recommended; bearer tokens are sent in cleartext.
+- `--dry-run` — Validate arguments and resolve input files, print the job manifest, then exit without contacting the server.
 
 Either `--output` or `--in-place` must be specified, but not both.
 

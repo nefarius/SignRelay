@@ -36,6 +36,7 @@ public sealed class Build : NukeBuild
     static AbsolutePath Src => RootDirectory / "src";
     static AbsolutePath ContractsProj => Src / "SignRelay.Contracts" / "SignRelay.Contracts.csproj";
     static AbsolutePath CliProj => Src / "SignRelay.Cli" / "SignRelay.Cli.csproj";
+    static AbsolutePath MsBuildProj => Src / "SignRelay.MSBuild" / "SignRelay.MSBuild.csproj";
     static AbsolutePath ServerProj => Src / "SignRelay.Server" / "SignRelay.Server.csproj";
     static AbsolutePath AgentProj => Src / "SignRelay.Agent" / "SignRelay.Agent.csproj";
 
@@ -132,6 +133,17 @@ public sealed class Build : NukeBuild
                 .SetOutputDirectory(PackagesDirectory));
         });
 
+    /// <summary>Packs the MSBuild targets package (Nefarius.Tools.SignRelay.MSBuild).</summary>
+    Target PackMsBuild => _ => _
+        .DependsOn(Clean)
+        .Executes(() =>
+        {
+            DotNetPack(s => s
+                .SetProject(MsBuildProj)
+                .SetConfiguration(Configuration)
+                .SetOutputDirectory(PackagesDirectory));
+        });
+
     Target PublishServer => _ => _
         .DependsOn(Clean)
         .Executes(() =>
@@ -160,9 +172,9 @@ public sealed class Build : NukeBuild
                 .SetOutput(outDir));
         });
 
-    /// <summary>Packs Contracts + Cli NuGet packages and publishes Server + Agent.</summary>
+    /// <summary>Packs Contracts + Cli + MSBuild NuGet packages and publishes Server + Agent.</summary>
     Target Publish => _ => _
-        .DependsOn(PackContracts, PackCli, PublishServer, PublishAgent);
+        .DependsOn(PackContracts, PackCli, PackMsBuild, PublishServer, PublishAgent);
 
     /// <summary>Same outputs as <see cref="Publish"/> (aggregate alias).</summary>
     Target All => _ => _

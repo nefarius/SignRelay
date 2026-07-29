@@ -10,7 +10,7 @@ CI submits files to a small relay; a Windows agent runs `signtool` with your cer
 
 SignRelay is three parts: an **ASP.NET Core** relay ([`SignRelay.Server`](src/SignRelay.Server/)) that stores jobs and streams progress (Server-Sent Events), a **Windows agent** ([`SignRelay.Agent`](src/SignRelay.Agent/)) that leases work and signs with the Windows SDK’s `signtool`, and a **CLI** ([`SignRelay.Cli`](src/SignRelay.Cli/)) for pipelines to submit files and wait for signed outputs.
 
-Operational detail—Docker, reverse proxies and SSE timeouts, MinVer, and NUKE targets—is in **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)**. Windows agent install: **[`docs/AGENT-SETUP.md`](docs/AGENT-SETUP.md)**.
+Operational detail—Docker, reverse proxies and SSE timeouts, MinVer, and NUKE targets—is in **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)**. Windows agent install: **[`docs/AGENT-SETUP.md`](docs/AGENT-SETUP.md)**. Pipeline / CI consumer integration (Actions, MSBuild, AppVeyor, agent instructions): **[`docs/CI-INTEGRATION.md`](docs/CI-INTEGRATION.md)**.
 
 ## Features
 
@@ -19,7 +19,8 @@ Operational detail—Docker, reverse proxies and SSE timeouts, MinVer, and NUKE 
 - **SSE** endpoint for CI to wait on signing completion (`GET /api/v1/jobs/{id}/events`).
 - Agent **signing execution modes** (`Auto`, `SameProcess`, `InteractiveUser`) for console vs Windows Service and interactive certificate/smart-card UI.
 - Agent **self-install verbs** (`install` / `uninstall` / `status`) with machine config under `%ProgramData%`, Event Log + rolling file logs, and self-contained **win-x64** release zips.
-- CLI **`signrelay submit`** with `--token` or `SIGN_RELAY_CI_TOKEN`, optional `--output` or `--in-place`, and configurable `--timeout`.
+- CLI **`signrelay submit`** with `--token` or `SIGN_RELAY_CI_TOKEN`, optional `--output` or `--in-place`, configurable `--timeout`, and `--dry-run`.
+- **GitHub Actions** composite (`action.yml` / `nefarius/SignRelay`) and **MSBuild** package (`Nefarius.Tools.SignRelay.MSBuild`) for consumer pipelines.
 - Optional **Docker or Podman** image build for the server (see deployment doc).
 
 ## Limitations / scope boundaries
@@ -59,7 +60,7 @@ Operational detail—Docker, reverse proxies and SSE timeouts, MinVer, and NUKE 
 
    On Windows: `.\build.ps1 Publish`
 
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for target names (`PackContracts`, `PackCli`, `PublishServer`, `PublishAgent`, `DockerServer`, etc.).
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for target names (`PackContracts`, `PackCli`, `PackMsBuild`, `PublishServer`, `PublishAgent`, `DockerServer`, etc.).
 
 ## Installation / usage (operators)
 
@@ -80,14 +81,14 @@ Local Docker/Podman for development only: [`docker/compose.yml`](docker/compose.
 
 Full walkthrough: **[`docs/AGENT-SETUP.md`](docs/AGENT-SETUP.md)**.
 
-**CLI:**
+**CLI / CI pipelines:**
 
 ```bash
 dotnet tool install --global Nefarius.Tools.SignRelay
 signrelay submit --server https://relay.example.com --token "$SIGN_RELAY_CI_TOKEN" --output ./signed ./artifacts/MyApp.exe
 ```
 
-Use `SIGN_RELAY_CI_TOKEN` matching `SignRelay__CiToken` on the server.
+Use `SIGN_RELAY_CI_TOKEN` matching `SignRelay__CiToken` on the server. Full consumer integration (GitHub Actions, MSBuild, AppVeyor, constraints for AI agents): **[`docs/CI-INTEGRATION.md`](docs/CI-INTEGRATION.md)**.
 
 TLS, proxy timeouts, retention, and ACR tags: **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)**.
 
@@ -126,7 +127,9 @@ Copyright (c) 2026 Benjamin Höglinger-Stelzer.
 ## Sources and credits
 
 - Agent install walkthrough: [`docs/AGENT-SETUP.md`](docs/AGENT-SETUP.md)
+- CI / pipeline integration: [`docs/CI-INTEGRATION.md`](docs/CI-INTEGRATION.md)
 - Deployment and build reference: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- Distributable agent skill: [`skills/signrelay-ci/`](skills/signrelay-ci/)
 - Versioning: [MinVer](https://github.com/adamralph/minver)
 - HTTP API: [FastEndpoints](https://fast-endpoints.com/)
 - Optional `signtool` discovery: [wdkwhere](https://github.com/nefarius/wdkwhere), [Nefarius.Tools.WDKWhere](https://www.nuget.org/packages/Nefarius.Tools.WDKWhere)

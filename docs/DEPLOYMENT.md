@@ -19,6 +19,7 @@ Outputs go under **`artifacts/`** (gitignored): NuGet packages in **`artifacts/p
 |--------|----------------|
 | `PackContracts` | `dotnet pack` [SignRelay.Contracts](../src/SignRelay.Contracts/SignRelay.Contracts.csproj) |
 | `PackCli` | `dotnet pack` [SignRelay.Cli](../src/SignRelay.Cli/SignRelay.Cli.csproj) (global tool package) |
+| `PackMsBuild` | `dotnet pack` [SignRelay.MSBuild](../src/SignRelay.MSBuild/SignRelay.MSBuild.csproj) (consumer MSBuild targets) |
 | `PublishServer` | `dotnet publish` [SignRelay.Server](../src/SignRelay.Server/SignRelay.Server.csproj) |
 | `PublishAgent` | Self-contained **`win-x64`** publish of [SignRelay.Agent](../src/SignRelay.Agent/SignRelay.Agent.csproj) (no .NET runtime required on the signing machine) |
 | `Publish` | All of the above (default entry target for `dotnet run --project build/...`) |
@@ -180,18 +181,11 @@ cd artifacts\publish\SignRelay.Agent
 
 ## CI usage
 
-Install the CLI as a global tool from NuGet:
-
-```bash
-dotnet tool install --global Nefarius.Tools.SignRelay
-signrelay submit --server https://relay.example.com --token "$SIGN_RELAY_CI_TOKEN" --output ./signed ./artifacts/MyApp.exe
-```
-
-Set **`SIGN_RELAY_CI_TOKEN`** to the same value as **`SignRelay__CiToken`** on the server.
+Pipeline integration (GitHub Actions composite, MSBuild targets, AppVeyor, raw CLI, exit codes, agent paste blocks): **[CI-INTEGRATION.md](CI-INTEGRATION.md)**.
 
 Tagged releases (`v*`) also publish:
 
-- NuGet package **Nefarius.Tools.SignRelay**
+- NuGet packages **Nefarius.Tools.SignRelay** and **Nefarius.Tools.SignRelay.MSBuild**
 - GitHub Release assets: agent zip, server zip, `checksums.txt`
 - Container image `nefarius.azurecr.io/signrelay:<version>` and `:latest`
 

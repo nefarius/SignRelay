@@ -71,6 +71,11 @@ public static class SubmitCommand
             Description = "Allow http:// server URLs (not recommended; bearer tokens will be sent in cleartext).",
             DefaultValueFactory = _ => false
         };
+        var dryRun = new Option<bool>("--dry-run")
+        {
+            Description = "Validate arguments and resolve input files, print the job manifest, then exit without contacting the server.",
+            DefaultValueFactory = _ => false
+        };
         var files = new Argument<List<string>>("files")
         {
             Description = "Paths to files to sign",
@@ -85,6 +90,7 @@ public static class SubmitCommand
             inplace,
             timeout,
             allowInsecure,
+            dryRun,
             files
         };
 
@@ -95,6 +101,7 @@ public static class SubmitCommand
             parseResult.GetValue(inplace),
             parseResult.GetValue(timeout),
             parseResult.GetValue(allowInsecure),
+            parseResult.GetValue(dryRun),
             parseResult.GetValue(files)!,
             ct));
 
@@ -110,6 +117,7 @@ public static class SubmitCommand
         bool inPlace,
         TimeSpan timeout,
         bool allowInsecure,
+        bool dryRun,
         List<string> filePaths,
         CancellationToken frameworkToken = default)
     {
@@ -214,6 +222,26 @@ public static class SubmitCommand
         {
             await Console.Error.WriteLineAsync($"Path error: {ex.Message}").ConfigureAwait(false);
             return 2;
+        }
+
+        if (dryRun)
+        {
+            var mode = inPlace ? "in-place" : $"output={outputDir!.FullName}";
+            await Console.Out.WriteLineAsync("Dry run — no network request will be made.").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"Server: {TrimServer(server)}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"Mode: {mode}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"Timeout: {timeout}").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync($"Files ({normalized.Count}):").ConfigureAwait(false);
+            for (var i = 0; i < normalized.Count; i++)
+            {
+                await Console.Out.WriteLineAsync(
+                    $"  {manifest.Files[i].RelativePath} <= {normalized[i]}").ConfigureAwait(false);
+            }
+
+            var manifestJson = JsonSerializer.Serialize(manifest, Json);
+            await Console.Out.WriteLineAsync("Manifest:").ConfigureAwait(false);
+            await Console.Out.WriteLineAsync(manifestJson).ConfigureAwait(false);
+            return 0;
         }
 
         // Link CancellationToken to Ctrl+C, the wall-clock timeout, and the framework token

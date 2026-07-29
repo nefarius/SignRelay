@@ -1,0 +1,233 @@
+name: SignRelay
+description: Submit files to a SignRelay relay for remote Authenticode signing and download signed outputs.
+author: Nefarius
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  server:
+    description: Base URL of the SignRelay server (https://relay.example.com).
+    required: true
+  token:
+    description: CI bearer token (must match SignRelay__CiToken on the server). Prefer secrets.SIGN_RELAY_CI_TOKEN.
+    required: true
+  files:
+    description: >
+      Multiline list of file paths or globs to sign. Globs are expanded by this action
+      (PowerShell Get-ChildItem); the CLI itself does not expand globs. Fails if zero files match.
+    required: true
+  output:
+    description: Directory for signed files (preserves relative paths). Mutually exclusive with in-place.
+    required: false
+    default: ''
+  in-place:
+    description: Overwrite input files with signed copies. Mutually exclusive with output.
+    required: false
+    default: 'false'
+  timeout:
+    description: Maximum wait for signing (passed to signrelay --timeout). Default 45 minutes.
+    required: false
+    default: '00:45:00'
+  tool-version:
+    description: Pin Nefarius.Tools.SignRelay global tool version (empty = latest).
+    required: false
+    default: ''
+  dry-run:
+    description: Validate and expand files only; do not contact the server (signrelay --dry-run).
+    required: false
+    default: 'false'
+  allow-insecure:
+    description: Allow http:// server URLs (local testing only; bearer tokens sent in cleartext).
+    required: false
+    default: 'false'
+  skip-tool-install:
+    description: Skip installing Nefarius.Tools.SignRelay (use when signrelay is already on PATH).
+    required: false
+    default: 'false'
+
+outputs:
+  signed-count:
+    description: Number of files submitted for signing.
+    value: ${{ steps.submit.outputs.signed-count }}
+  output-path:
+    description: Absolute path of the output directory when output is set; otherwise empty.
+    value: ${{ steps.submit.outputs.output-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure dotnet is available
+      shell: pwsh
+      run: |
+        if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+          Write-Error "dotnet was not found on PATH. Run actions/setup-dotnet (or equivalent) before this action."
+          exit 1
+        }
+        Write-Host "dotnet: $((dotnet --version).Trim())"
+
+    - name: Install SignRelay CLI
+      shell: pwsh
+      run: |
+        $homeDir = if ($env:HOME) { $env:HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { $null }
+        if (-not $homeDir) {
+          Write-Error "Neither HOME nor USERPROFILE is set; cannot locate ~/.dotnet/tools."
+          exit 1
+        }
+        $tools = Join-Path $homeDir '.dotnet' 'tools'
+        if ($env:PATH -notlike "*${tools}*") {
+          $env:PATH = "$tools$([IO.Path]::PathSeparator)$env:PATH"
+          "PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
+
+        $skip = '${{ inputs.skip-tool-install }}'.ToLowerInvariant() -eq 'true'
+        if ($skip) {
+          if (-not (Get-Command signrelay -ErrorAction SilentlyContinue)) {
+            Write-Error "skip-tool-install is true but signrelay is not on PATH."
+            exit 1
+          }
+          Write-Host "Skipping tool install (signrelay already on PATH)."
+          exit 0
+        }
+
+        $version = '${{ inputs.tool-version }}'.Trim()
+        $pkg = 'Nefarius.Tools.SignRelay'
+        $args = @('tool', 'install', '--global', $pkg)
+        if ($version) { $args += @('--version', $version) }
+
+        & dotnet @args
+        if ($LASTEXITCODE -ne 0) {
+          $update = @('tool', 'update', '--global', $pkg)
+          if ($version) { $update += @('--version', $version) }
+          & dotnet @update
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to install or update $pkg"
+            exit 1
+          }
+        }
+
+        if (-not (Get-Command signrelay -ErrorAction SilentlyContinue)) {
+          Write-Error "signrelay not found after install. Expected under $tools"
+          exit 1
+        }
+        Write-Host "signrelay ready"
+
+    - name: Expand files and submit
+      id: submit
+      shell: pwsh
+      env:
+        SIGN_RELAY_CI_TOKEN: ${{ inputs.token }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        function Expand-SignRelayFiles([string]$Raw) {
+          $resolved = [System.Collections.Generic.List[string]]::new()
+          $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          foreach ($line in ($Raw -split "`r?`n")) {
+            $pattern = $line.Trim()
+            if (-not $pattern) { continue }
+
+            $hasGlob = $pattern.Contains('*') -or $pattern.Contains('?')
+            if ($hasGlob) {
+              $parent = Split-Path -Parent $pattern
+              if ([string]::IsNullOrWhiteSpace($parent)) { $parent = '.' }
+              $leaf = Split-Path -Leaf $pattern
+              if (-not (Test-Path -LiteralPath $parent)) {
+                Write-Error "Glob parent directory does not exist: $parent (from pattern '$pattern')"
+                exit 1
+              }
+              $matches = @(Get-ChildItem -Path $parent -Filter $leaf -File -Recurse:$false -ErrorAction SilentlyContinue)
+              # Support ** and nested patterns via -Path when Filter is insufficient
+              if ($pattern -match '\*\*') {
+                $matches = @(Get-ChildItem -Path $pattern -File -Recurse -ErrorAction SilentlyContinue)
+              } elseif ($matches.Count -eq 0) {
+                $matches = @(Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue)
+              }
+              if ($matches.Count -eq 0) {
+                Write-Error "Glob matched zero files: $pattern"
+                exit 1
+              }
+              foreach ($m in $matches) {
+                $full = $m.FullName
+                if ($seen.Add($full)) { $resolved.Add($full) }
+              }
+            } else {
+              $full = [IO.Path]::GetFullPath($pattern)
+              if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+                Write-Error "File not found: $full"
+                exit 1
+              }
+              if ($seen.Add($full)) { $resolved.Add($full) }
+            }
+          }
+          if ($resolved.Count -eq 0) {
+            Write-Error "No files to sign after expanding inputs.files."
+            exit 1
+          }
+          return $resolved
+        }
+
+        $files = Expand-SignRelayFiles @'
+${{ inputs.files }}
+'@
+
+        Write-Host "Resolved $($files.Count) file(s) for signing:"
+        $files | ForEach-Object { Write-Host "  $_" }
+
+        $submitArgs = @(
+          'submit',
+          '--server', '${{ inputs.server }}',
+          '--timeout', '${{ inputs.timeout }}'
+        )
+
+        $inPlace = '${{ inputs.in-place }}'.ToLowerInvariant() -eq 'true'
+        $output = '${{ inputs.output }}'.Trim()
+        $dryRun = '${{ inputs.dry-run }}'.ToLowerInvariant() -eq 'true'
+        $allowInsecure = '${{ inputs.allow-insecure }}'.ToLowerInvariant() -eq 'true'
+
+        if ($inPlace -and $output) {
+          Write-Error "Use either output or in-place, not both."
+          exit 1
+        }
+        if (-not $inPlace -and -not $output) {
+          Write-Error "Specify output or set in-place: true."
+          exit 1
+        }
+
+        if ($inPlace) {
+          $submitArgs += '--in-place'
+        } else {
+          $submitArgs += @('--output', $output)
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+        }
+
+        if ($dryRun) { $submitArgs += '--dry-run' }
+        if ($allowInsecure) { $submitArgs += '--allow-insecure' }
+
+        $submitArgs += $files
+
+        & signrelay @submitArgs
+        $code = $LASTEXITCODE
+
+        $remediation = @{
+          1 = 'Unexpected error — check runner logs and network connectivity to the relay.'
+          2 = 'Invalid arguments or bad input — verify files, output/in-place exclusivity, and token.'
+          3 = 'Server rejected the submit (4xx/5xx) — check SIGN_RELAY_CI_TOKEN vs SignRelay__CiToken and MaxTotalJobBytes.'
+          4 = 'Signing failed on the agent — check agent Event Log / ProgramData logs and certificate availability.'
+          5 = 'Timeout or cancel — raise timeout, JobTimeToLive, and reverse-proxy SSE read timeout.'
+          6 = 'SSE stream ended without a terminal event — usually a proxy/load-balancer read timeout on /api/v1/jobs/{id}/events.'
+        }
+
+        if ($code -ne 0) {
+          $hint = if ($remediation.ContainsKey($code)) { $remediation[$code] } else { 'See docs/CI-INTEGRATION.md exit codes.' }
+          Write-Host "::error::signrelay submit failed with exit code $code. $hint"
+          exit $code
+        }
+
+        "signed-count=$($files.Count)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        if ($output) {
+          $absOut = [IO.Path]::GetFullPath($output)
+          "output-path=$absOut" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        } else {
+          "output-path=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        }

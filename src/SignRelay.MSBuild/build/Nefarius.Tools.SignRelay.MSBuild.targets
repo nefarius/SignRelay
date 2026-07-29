@@ -1,0 +1,58 @@
+<Project>
+  <!--
+    Opt-in remote Authenticode signing via SignRelay.
+    Enable with /p:SignRelayEnabled=true and set SignRelayServer + SignRelayToken (or SIGN_RELAY_CI_TOKEN).
+    Signs in-place after Publish by default (stamp file avoids re-signing on incremental builds).
+  -->
+
+  <Target Name="_SignRelayPrepareFiles" Condition="'$(SignRelayEnabled)' == 'true'">
+    <ItemGroup Condition="'$(SignRelaySignTargetPath)' == 'true' AND '@(SignRelayFile)' == '' AND '$(TargetPath)' != ''">
+      <SignRelayFile Include="$(TargetPath)" Condition="Exists('$(TargetPath)')" />
+    </ItemGroup>
+    <!-- Also consider PublishDir primary output when present. -->
+    <ItemGroup Condition="'$(SignRelaySignTargetPath)' == 'true' AND '@(SignRelayFile)' == '' AND '$(PublishDir)' != ''">
+      <SignRelayFile Include="$(PublishDir)$(TargetFileName)" Condition="Exists('$(PublishDir)$(TargetFileName)')" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_SignRelayResolveTool" Condition="'$(SignRelayEnabled)' == 'true'">
+    <PropertyGroup>
+      <_SignRelayExe>$(SignRelayToolPath)</_SignRelayExe>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(_SignRelayExe)' == '' AND Exists('$(USERPROFILE)\.dotnet\tools\signrelay.exe')">
+      <_SignRelayExe>$(USERPROFILE)\.dotnet\tools\signrelay.exe</_SignRelayExe>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(_SignRelayExe)' == '' AND Exists('$(HOME)/.dotnet/tools/signrelay')">
+      <_SignRelayExe>$(HOME)/.dotnet/tools/signrelay</_SignRelayExe>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(_SignRelayExe)' == ''">
+      <_SignRelayExe>signrelay</_SignRelayExe>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="SignRelaySign"
+          AfterTargets="$(SignRelayAfterTargets)"
+          DependsOnTargets="_SignRelayPrepareFiles;_SignRelayResolveTool"
+          Condition="'$(SignRelayEnabled)' == 'true'"
+          Inputs="@(SignRelayFile)"
+          Outputs="$(SignRelayStampFile)">
+
+    <Error Condition="'$(SignRelayServer)' == ''"
+           Text="SignRelayEnabled is true but SignRelayServer is empty. Set /p:SignRelayServer=https://relay.example.com" />
+    <Error Condition="'$(SignRelayToken)' == ''"
+           Text="SignRelayEnabled is true but SignRelayToken / SIGN_RELAY_CI_TOKEN is empty." />
+    <Error Condition="'@(SignRelayFile)' == ''"
+           Text="SignRelayEnabled is true but no SignRelayFile items were found (and TargetPath/PublishDir produced none)." />
+
+    <Message Importance="high"
+             Text="SignRelay: submitting @(SignRelayFile) to $(SignRelayServer) (in-place)." />
+
+    <Exec Command="&quot;$(_SignRelayExe)&quot; submit --server &quot;$(SignRelayServer)&quot; --token &quot;$(SignRelayToken)&quot; --timeout &quot;$(SignRelayTimeout)&quot; --in-place @(SignRelayFile->'&quot;%(FullPath)&quot;', ' ')"
+          LogStandardErrorAsError="true"
+          ConsoleToMSBuild="false" />
+
+    <MakeDir Directories="$(IntermediateOutputPath)" Condition="!Exists('$(IntermediateOutputPath)')" />
+    <Touch Files="$(SignRelayStampFile)" AlwaysCreate="true" />
+  </Target>
+</Project>
