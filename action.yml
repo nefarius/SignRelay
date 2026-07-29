@@ -117,6 +117,9 @@ runs:
       shell: pwsh
       env:
         SIGN_RELAY_CI_TOKEN: ${{ inputs.token }}
+        # Prefer env over a PowerShell @'...'@ here-string: the closing '@ must be
+        # column-0, which terminates a YAML | block and breaks action.yml parsing.
+        SIGN_RELAY_FILES: ${{ inputs.files }}
       run: |
         $ErrorActionPreference = 'Stop'
 
@@ -167,9 +170,7 @@ runs:
           return $resolved
         }
 
-        $files = Expand-SignRelayFiles @'
-${{ inputs.files }}
-'@
+        $files = Expand-SignRelayFiles $env:SIGN_RELAY_FILES
 
         Write-Host "Resolved $($files.Count) file(s) for signing:"
         $files | ForEach-Object { Write-Host "  $_" }
