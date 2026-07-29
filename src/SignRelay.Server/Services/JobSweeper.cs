@@ -41,7 +41,7 @@ public sealed class JobSweeper : BackgroundService
         }
     }
 
-    private async Task SweepOnceAsync(CancellationToken ct)
+    internal async Task SweepOnceAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -162,15 +162,21 @@ public sealed class JobSweeper : BackgroundService
 
         // DB retention: purge terminal job rows older than JobRecordRetention so SQLite
         // does not grow unbounded after on-disk artifacts are gone.
+        // Filter in memory — toClean already has Status >= terminal and CompletedUtc past
+        // ArtifactCleanupDelay; JobRecordRetention >= ArtifactCleanupDelay is validated at startup.
+        // Delete by string[] Contains so EF can translate ExecuteDelete (HashSet + custom
+        // comparer cannot). Chunk to stay under SQLite's variable limit.
         var recordCutoff = now - opt.JobRecordRetention;
+        var purgeIds = toClean
+            .Where(j => artifactsClearedIds.Contains(j.Id) && j.CompletedUtc <= recordCutoff)
+            .Select(j => j.Id)
+            .ToArray();
+
         var deleted = 0;
-        if (artifactsClearedIds.Count > 0)
+        foreach (var chunk in purgeIds.Chunk(200))
         {
-            deleted = await db.Jobs
-                .Where(j => j.Status >= JobStatus.Succeeded
-                            && j.CompletedUtc != null
-                            && j.CompletedUtc <= recordCutoff
-                            && artifactsClearedIds.Contains(j.Id))
+            deleted += await db.Jobs
+                .Where(j => chunk.Contains(j.Id))
                 .ExecuteDeleteAsync(ct)
                 .ConfigureAwait(false);
         }
