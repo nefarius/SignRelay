@@ -2,7 +2,7 @@
   <PropertyGroup>
     <!-- Opt-in: local builds must not hit the network. -->
     <SignRelayEnabled Condition="'$(SignRelayEnabled)' == ''">false</SignRelayEnabled>
-    <!-- When true and no SignRelayFile items are defined, sign $(TargetPath). -->
+    <!-- When true and no SignRelayFile items are defined, prefer PublishDir then TargetPath. -->
     <SignRelaySignTargetPath Condition="'$(SignRelaySignTargetPath)' == ''">true</SignRelaySignTargetPath>
     <!-- Prefer env SIGN_RELAY_CI_TOKEN when property is empty. -->
     <SignRelayToken Condition="'$(SignRelayToken)' == ''">$(SIGN_RELAY_CI_TOKEN)</SignRelayToken>

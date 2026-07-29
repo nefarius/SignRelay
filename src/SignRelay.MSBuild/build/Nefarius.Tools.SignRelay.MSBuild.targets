@@ -3,15 +3,17 @@
     Opt-in remote Authenticode signing via SignRelay.
     Enable with /p:SignRelayEnabled=true and set SignRelayServer + SignRelayToken (or SIGN_RELAY_CI_TOKEN).
     Signs in-place after Publish by default (stamp file avoids re-signing on incremental builds).
+    The CI token is passed to signrelay via SIGN_RELAY_CI_TOKEN (not --token) so it does not appear on the process command line.
   -->
 
   <Target Name="_SignRelayPrepareFiles" Condition="'$(SignRelayEnabled)' == 'true'">
-    <ItemGroup Condition="'$(SignRelaySignTargetPath)' == 'true' AND '@(SignRelayFile)' == '' AND '$(TargetPath)' != ''">
-      <SignRelayFile Include="$(TargetPath)" Condition="Exists('$(TargetPath)')" />
-    </ItemGroup>
-    <!-- Also consider PublishDir primary output when present. -->
+    <!-- Prefer PublishDir primary output when present (AfterTargets=Publish). -->
     <ItemGroup Condition="'$(SignRelaySignTargetPath)' == 'true' AND '@(SignRelayFile)' == '' AND '$(PublishDir)' != ''">
       <SignRelayFile Include="$(PublishDir)$(TargetFileName)" Condition="Exists('$(PublishDir)$(TargetFileName)')" />
+    </ItemGroup>
+    <!-- Fallback: build output TargetPath when no publish artifact was selected. -->
+    <ItemGroup Condition="'$(SignRelaySignTargetPath)' == 'true' AND '@(SignRelayFile)' == '' AND '$(TargetPath)' != ''">
+      <SignRelayFile Include="$(TargetPath)" Condition="Exists('$(TargetPath)')" />
     </ItemGroup>
   </Target>
 
@@ -48,7 +50,8 @@
     <Message Importance="high"
              Text="SignRelay: submitting @(SignRelayFile) to $(SignRelayServer) (in-place)." />
 
-    <Exec Command="&quot;$(_SignRelayExe)&quot; submit --server &quot;$(SignRelayServer)&quot; --token &quot;$(SignRelayToken)&quot; --timeout &quot;$(SignRelayTimeout)&quot; --in-place @(SignRelayFile->'&quot;%(FullPath)&quot;', ' ')"
+    <Exec Command="&quot;$(_SignRelayExe)&quot; submit --server &quot;$(SignRelayServer)&quot; --timeout &quot;$(SignRelayTimeout)&quot; --in-place @(SignRelayFile->'&quot;%(FullPath)&quot;', ' ')"
+          EnvironmentVariables="SIGN_RELAY_CI_TOKEN=$(SignRelayToken)"
           LogStandardErrorAsError="true"
           ConsoleToMSBuild="false" />
 
