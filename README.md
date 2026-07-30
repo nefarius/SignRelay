@@ -1,4 +1,4 @@
-# <img src="assets/NSS-128x128.png" align="left" />SignRelay
+# <img src="assets/NSS-Vibe.png" align="left" />SignRelay
 
 [![Build](https://github.com/nefarius/SignRelay/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nefarius/SignRelay/actions/workflows/build.yml)
 [![.NET](https://img.shields.io/badge/.NET-10.0-blue)](https://dotnet.microsoft.com/download/dotnet/10.0)
