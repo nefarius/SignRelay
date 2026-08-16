@@ -14,7 +14,7 @@ COPY src/SignRelay.Server/ src/SignRelay.Server/
 RUN dotnet publish src/SignRelay.Server/SignRelay.Server.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.10 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.11 AS final
 ARG MINVERVERSIONOVERRIDE
 LABEL org.opencontainers.image.version=$MINVERVERSIONOVERRIDE
 WORKDIR /app
