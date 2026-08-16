@@ -29,7 +29,7 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
     <!-- CLI -->
-    <PackageVersion Include="System.CommandLine" Version="2.0.10" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.11" />
     <!-- Transitive pin: bundle_e_sqlite3 3.0.5 depends on SQLite 3.53.4
          (SQLite >= 3.53.4), replacing the vulnerable SQLitePCLRaw.lib.e_sqlite3 2.1.11
          pulled in by Microsoft.EntityFrameworkCore.Sqlite (CVE-2025-6965 / GHSA-2m69-gcr7-jv3q). -->
