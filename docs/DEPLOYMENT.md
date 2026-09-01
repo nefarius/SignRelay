@@ -79,6 +79,7 @@ dotnet run --project build/_build.csproj -- Release
 ## Relay server (Docker / Podman / VPS)
 
 - Map **port 8080** (or place a reverse proxy in front with TLS). The container listens on `0.0.0.0:8080`.
+- **`GET /`** is unauthenticated and returns `{ "version": "<minver>" }` (MinVer assembly version).
 - Persist **`SignRelay__StoragePath`** (default `/data` in [compose.yml](../docker/compose.yml)) so SQLite and uploaded blobs survive restarts.
 - Set secrets via environment variables (ASP.NET Core configuration):
   - **`SignRelay__CiToken`** — bearer token used by CI / `signrelay submit --token`.
