@@ -38,6 +38,21 @@ try {
   $norm = $searchRoot.Replace('\', '/')
   if ($norm -ne './bin') { throw "search root was '$searchRoot'" }
 
+  $rootCases = @(
+    @{ Pattern = 'C:\foo\bar\**\*.exe'; Expected = 'C:\foo\bar' }
+    @{ Pattern = 'C:\**\*.exe'; Expected = 'C:\' }
+    @{ Pattern = '\\server\share\dir\**\*.exe'; Expected = '\\server\share\dir' }
+    @{ Pattern = '\\server\share\**\*.exe'; Expected = '\\server\share' }
+    @{ Pattern = '/tmp/bin/**/*.exe'; Expected = '/tmp/bin' }
+    @{ Pattern = '/**/*.exe'; Expected = '/' }
+  )
+  foreach ($case in $rootCases) {
+    $actual = Get-SignRelayGlobSearchRoot $case.Pattern
+    if ($actual -ne $case.Expected) {
+      throw "search root for '$($case.Pattern)' was '$actual' (expected '$($case.Expected)')"
+    }
+  }
+
   $missingFailed = $false
   try {
     Expand-SignRelayFiles './missing/**/*.exe' | Out-Null

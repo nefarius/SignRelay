@@ -5,19 +5,30 @@
 
 function Get-SignRelayGlobSearchRoot([string]$Pattern) {
   $normalized = $Pattern.Replace('\', '/')
-  $parts = [System.Collections.Generic.List[string]]::new()
-  foreach ($segment in ($normalized -split '/')) {
-    if ($segment -match '[*?]') { break }
-    if ($segment -eq '' -and $parts.Count -eq 0) {
-      $parts.Add('')
-      continue
+  $globAt = -1
+  for ($i = 0; $i -lt $normalized.Length; $i++) {
+    if ($normalized[$i] -eq '*' -or $normalized[$i] -eq '?') {
+      $globAt = $i
+      break
     }
-    if ($segment -ne '') { $parts.Add($segment) }
   }
-  if ($parts.Count -eq 0 -or ($parts.Count -eq 1 -and $parts[0] -eq '')) {
-    return '.'
+  if ($globAt -le 0) { return '.' }
+
+  $slash = $normalized.LastIndexOf([char]'/', $globAt - 1)
+  if ($slash -lt 0) { return '.' }
+  if ($slash -eq 0) { return '/' }
+
+  $prefix = $normalized.Substring(0, $slash)
+  if ($prefix -match '^[A-Za-z]:$') {
+    return $prefix + '\'
   }
-  return ($parts -join [IO.Path]::DirectorySeparatorChar)
+
+  $isUnc = $Pattern.StartsWith('\\') -or $Pattern.StartsWith('//')
+  $sep = if ($isUnc -or $Pattern.Contains('\')) { '\' } else { '/' }
+  if ($isUnc) {
+    return $sep + $sep + $prefix.TrimStart('/').Replace('/', $sep)
+  }
+  return $prefix.Replace('/', $sep)
 }
 
 function Get-SignRelayGlobRemainder([string]$Pattern) {
