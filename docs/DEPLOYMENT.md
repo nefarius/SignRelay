@@ -114,6 +114,14 @@ The CI client holds **`GET /api/v1/jobs/{id}/events`** open for the whole signin
 
 Without this, the proxy may close the stream while the desktop is still signing, and the CI step fails.
 
+### Nested file paths and reverse proxies
+
+Unsigned and signed file downloads now use **index routes** (`/api/v1/worker/jobs/{jobId}/files/{index}/unsigned` and `/api/v1/jobs/{jobId}/files/{index}/signed`). These URLs contain no encoded slashes.
+
+Older path-in-segment routes (`.../unsigned/{fileName}`, `.../signed/{fileName}`) remain for compatibility. Nested relative paths on those routes produce `%2F` and are rejected by default on recent Traefik versions (`400 Bad Request` before the request reaches SignRelay). Nested multi-file jobs (same basename in different folders) require a **server** that emits index URLs — upgrade the server first, then the agent and CLI.
+
+You do **not** need Traefik `allowEncodedSlash` for the new protocol. Leave encoded-slash rejection enabled.
+
 ### Traefik and Docker HEALTHCHECK
 
 Traefik’s Docker provider **removes the router** for containers Docker reports as `unhealthy` or `starting`. The public symptom is Traefik’s own **`404 page not found`** (plain text), not a 502 from the app — TLS may still work if a certificate was issued earlier.

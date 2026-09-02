@@ -6,17 +6,12 @@ using SignRelay.Server.Services;
 
 namespace SignRelay.Server.Api.Ci;
 
-/// <summary>
-/// Legacy signed download that embeds a relative path in one route segment.
-/// Nested paths require encoded slashes and are rejected by some reverse proxies.
-/// Prefer <see cref="GetJobSignedFileByIndexEndpoint"/>.
-/// </summary>
-public sealed class GetJobSignedFileEndpoint : EndpointWithoutRequest
+public sealed class GetJobSignedFileByIndexEndpoint : EndpointWithoutRequest
 {
     private readonly JobService _jobs;
-    private readonly ILogger<GetJobSignedFileEndpoint> _log;
+    private readonly ILogger<GetJobSignedFileByIndexEndpoint> _log;
 
-    public GetJobSignedFileEndpoint(JobService jobs, ILogger<GetJobSignedFileEndpoint> log)
+    public GetJobSignedFileByIndexEndpoint(JobService jobs, ILogger<GetJobSignedFileByIndexEndpoint> log)
     {
         _jobs = jobs;
         _log = log;
@@ -24,14 +19,14 @@ public sealed class GetJobSignedFileEndpoint : EndpointWithoutRequest
 
     public override void Configure()
     {
-        Get($"{ApiRoutes.Prefix}/jobs/{{id}}/signed/{{fileName}}");
+        Get($"{ApiRoutes.Prefix}/jobs/{{jobId}}/files/{{index}}/signed");
         AuthSchemes(SignRelayAuthenticationHandler.SchemeName);
     }
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        var idRaw = Route<string>("id");
-        if (!JobRoute.TryBind(idRaw, out var id))
+        var jobIdRaw = Route<string>("jobId");
+        if (!JobRoute.TryBind(jobIdRaw, out var jobId))
         {
             AddError("Job id is invalid.");
             ServerHttpError.Log(_log, HttpContext, 400, "Job id is invalid.");
@@ -39,26 +34,30 @@ public sealed class GetJobSignedFileEndpoint : EndpointWithoutRequest
             return;
         }
 
-        var fileName = Route<string>("fileName")!;
-        if (!JobAccess.CanAccessJob(User, id))
+        if (!JobAccess.CanAccessJob(User, jobId))
         {
             ServerHttpError.Log(_log, HttpContext, 401, "Not authorized for this job.");
             await Send.UnauthorizedAsync(ct).ConfigureAwait(false);
             return;
         }
 
+        var index = Route<int>("index");
         try
         {
-            await using var stream = await _jobs.OpenSignedAsync(id, fileName, ct).ConfigureAwait(false);
-            if (stream is null)
+            var opened = await _jobs.OpenSignedByIndexAsync(jobId, index, ct).ConfigureAwait(false);
+            if (opened is null)
             {
                 ServerHttpError.Log(_log, HttpContext, 404, "Signed file not found.");
                 await Send.NotFoundAsync(ct).ConfigureAwait(false);
                 return;
             }
 
-            await Send.StreamAsync(stream, Path.GetFileName(fileName), null, "application/octet-stream", null, false, ct)
-                .ConfigureAwait(false);
+            var (stream, fileName) = opened.Value;
+            await using (stream)
+            {
+                await Send.StreamAsync(stream, fileName, null, "application/octet-stream", null, false, ct)
+                    .ConfigureAwait(false);
+            }
         }
         catch (InvalidOperationException ex)
         {

@@ -207,6 +207,52 @@ public sealed class JobServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task TryLeaseAsync_EmitsIndexedUnsignedPaths()
+    {
+        var (job, _) = await CreateTestJobAsync();
+        var lease = await _sut.TryLeaseAsync("agent-1", CancellationToken.None);
+        Assert.NotNull(lease);
+        Assert.Equal(ApiRoutes.WorkerUnsignedByIndex(job.Id, 0), lease.UnsignedDownloadPaths[0]);
+        Assert.DoesNotContain("%2F", lease.UnsignedDownloadPaths[0], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OpenUnsignedByIndex_OutOfRange_ReturnsNull()
+    {
+        var (job, _) = await CreateTestJobAsync();
+        await _sut.TryLeaseAsync("agent-1", CancellationToken.None);
+        Assert.Null(await _sut.OpenUnsignedByIndexAsync(job.Id, 5, CancellationToken.None));
+        Assert.Null(await _sut.OpenUnsignedByIndexAsync(job.Id, -1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OpenSignedAsync_InvalidJobId_Throws()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.OpenSignedAsync("../jobs/other", "file.exe", CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.OpenSignedAsync("not-hex", "file.exe", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task FailJobAsync_PersistsTruncationMarker()
+    {
+        var (job, _) = await CreateTestJobAsync();
+        var huge = new string('x', HttpFailureDetails.PersistMaxChars + 80);
+        await _sut.FailJobAsync(job.Id, huge, CancellationToken.None);
+        var refreshed = await _db.Jobs.AsNoTracking().FirstAsync(j => j.Id == job.Id);
+        Assert.Equal(HttpFailureDetails.PersistMaxChars, refreshed.ErrorMessage!.Length);
+        Assert.EndsWith(HttpFailureDetails.TruncationMarker, refreshed.ErrorMessage);
+        Assert.Equal(JobStatus.Failed, refreshed.Status);
+    }
+
+    [Fact]
+    public void ResolveJobDir_Rejects_InvalidId()
+    {
+        Assert.Throws<InvalidOperationException>(() => _sut.ResolveJobDir("../../../etc"));
+    }
+
+    [Fact]
     public async Task CreateJobAsync_EmptyRelativePath_Throws()
     {
         var manifest = new JobManifestDto

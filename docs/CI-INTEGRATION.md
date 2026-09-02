@@ -12,6 +12,7 @@ Point a pipeline (or an AI agent editing a pipeline) at this document. Server/ag
 | CI token | Secret matching server `SignRelay__CiToken` (≥ 32 chars in Production) |
 | Agent online | At least one Windows agent with matching `SignRelay__AgentToken` and a usable cert |
 | Proxy SSE timeouts | Reverse-proxy **read** timeout ≥ longest expected job (often 30–60 minutes) — see [DEPLOYMENT.md](DEPLOYMENT.md) |
+| Nested output paths | Same basename in different folders (e.g. `bin/x64/...` and `bin/ARM64/...`) needs a server that emits index download URLs. Upgrade the **server first**, then CLI/agent. Legacy path-in-URL downloads encode `/` as `%2F` and fail with HTTP 400 on Traefik. |
 | .NET on runner | SDK or runtime that can run the global tool (same major as published tool; see releases) |
 
 ## Choose an integration
@@ -172,7 +173,7 @@ signrelay submit --server <url> [--token <token>] (--output <dir> | --in-place)
 | 1 | Unexpected / HTTP transport error | Runner network, DNS, TLS |
 | 2 | Invalid args / bad input | Token, `--output`/`--in-place`, file existence, duplicates |
 | 3 | Server rejected submit (4xx/5xx) | Token vs `SignRelay__CiToken`, `MaxTotalJobBytes` (default 512 MiB) |
-| 4 | Agent signing failed | Agent logs, cert, interactive session if required |
+| 4 | Agent signing failed | Agent logs, job SSE `error` (includes HTTP status/body when a transfer failed), cert, interactive session if required |
 | 5 | Timeout or cancel | `--timeout`, `SignRelay__JobTimeToLive` (default `02:00:00`), user cancel |
 | 6 | SSE ended without terminal event | Proxy/load-balancer **read** timeout on `/api/v1/jobs/{id}/events` |
 

@@ -108,7 +108,13 @@ public sealed class Worker : BackgroundService
         if (resp.StatusCode == System.Net.HttpStatusCode.NoContent)
             return null;
 
-        resp.EnsureSuccessStatusCode();
+        if (!resp.IsSuccessStatusCode)
+        {
+            var details = await HttpFailureDetails.FromResponseAsync("lease", 1, 1, resp, ct).ConfigureAwait(false);
+            _log.LogError("Lease request failed.\n{Details}", details);
+            resp.EnsureSuccessStatusCode();
+        }
+
         var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         var lease = JsonSerializer.Deserialize<LeaseResponse>(json, Json);
 
@@ -124,28 +130,10 @@ public sealed class Worker : BackgroundService
             return null;
         }
 
-        if (lease.UnsignedDownloadPaths?.Count != lease.Manifest.Files.Count)
+        if (!LeaseDownloadPath.TryValidate(lease.JobId, lease.UnsignedDownloadPaths, lease.Manifest.Files.Count, out var pathError))
         {
-            _log.LogError("Lease for job {JobId}: download path count ({Paths}) does not match manifest file count ({Files}).",
-                lease.JobId, lease.UnsignedDownloadPaths?.Count ?? 0, lease.Manifest.Files.Count);
+            _log.LogError("Lease for job {JobId}: {Error}", lease.JobId, pathError);
             return null;
-        }
-
-        // Reject any absolute URIs in download paths — only relative paths sourced from ApiRoutes
-        // (e.g. ApiRoutes.WorkerUnsigned) are expected; absolute URIs could redirect the lease
-        // bearer token to a foreign host.
-        foreach (var path in lease.UnsignedDownloadPaths!)
-        {
-            if (string.IsNullOrEmpty(path))
-            {
-                _log.LogError("Lease for job {JobId}: download path list contains a null or empty entry.", lease.JobId);
-                return null;
-            }
-            if (Uri.TryCreate(path, UriKind.Absolute, out _))
-            {
-                _log.LogError("Lease for job {JobId}: download path '{Path}' is an absolute URI; only relative paths are accepted.", lease.JobId, path);
-                return null;
-            }
         }
 
         _log.LogInformation("Leased job {JobId} ({FileCount} file(s)).", lease.JobId, lease.Manifest.Files.Count);
@@ -189,13 +177,23 @@ public sealed class Worker : BackgroundService
                 }
 
                 var url = lease.UnsignedDownloadPaths[i].TrimStart('/');
-                using var get = await jobHttp.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-                get.EnsureSuccessStatusCode();
-
-                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                await using (var fs = File.Create(dest))
+                try
                 {
-                    await get.Content.CopyToAsync(fs, ct).ConfigureAwait(false);
+                    await HttpTransfer.DownloadToFileAsync(
+                            jobHttp,
+                            url,
+                            dest,
+                            $"unsigned download [{i}] {entry.RelativePath}",
+                            ct,
+                            details => _log.LogWarning("Job {JobId} transfer: {Details}", lease.JobId, details))
+                        .ConfigureAwait(false);
+                }
+                catch (HttpRequestException ex)
+                {
+                    var details = ex.Message;
+                    _log.LogError("Job {JobId} unsigned download failed.\n{Details}", lease.JobId, details);
+                    await FailRemoteAsync(jobHttp, lease.JobId, HttpFailureDetails.Persist(details), ct).ConfigureAwait(false);
+                    return;
                 }
 
                 var exit = await _signTool.SignAsync(
@@ -218,34 +216,39 @@ public sealed class Worker : BackgroundService
                 await SendHeartbeatAsync(jobHttp, lease.JobId, ct).ConfigureAwait(false);
             }
 
-            using var mp = new MultipartFormDataContent();
-            for (var i = 0; i < lease.Manifest.Files.Count; i++)
+            try
             {
-                var entry = lease.Manifest.Files[i];
-                var normalizedRel = PathSafety.NormalizeRelativePath(entry.RelativePath);
-                var path = Path.GetFullPath(Path.Combine(tempRoot, normalizedRel));
-                var stream = File.OpenRead(path);
-                var fileContent = new StreamContent(stream);
-                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
-                mp.Add(fileContent, $"file_{i}", Path.GetFileName(path));
+                using var uploaded = await HttpTransfer.SendWithRetryAsync(
+                        jobHttp,
+                        () =>
+                        {
+                            var mp = BuildSignedUpload(tempRoot, lease.Manifest);
+                            return new HttpRequestMessage(HttpMethod.Post, ApiRoutes.WorkerSigned(lease.JobId))
+                            {
+                                Content = mp
+                            };
+                        },
+                        $"signed upload ({lease.Manifest.Files.Count} file(s))",
+                        ct,
+                        details => _log.LogWarning("Job {JobId} transfer: {Details}", lease.JobId, details))
+                    .ConfigureAwait(false);
             }
-
-            using (var put = await jobHttp.PostAsync(ApiRoutes.WorkerSigned(lease.JobId), mp, ct).ConfigureAwait(false))
+            catch (HttpRequestException ex)
             {
-                if (!put.IsSuccessStatusCode)
-                {
-                    var err = await put.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                    await FailRemoteAsync(jobHttp, lease.JobId, $"Upload failed: {(int)put.StatusCode} {err}", ct).ConfigureAwait(false);
-                    return;
-                }
+                _log.LogError("Job {JobId} signed upload failed.\n{Details}", lease.JobId, ex.Message);
+                await FailRemoteAsync(jobHttp, lease.JobId, HttpFailureDetails.Persist(ex.Message), ct).ConfigureAwait(false);
+                return;
             }
 
             using var completeBody = new StringContent("{}", Encoding.UTF8, "application/json");
             using var done = await jobHttp.PostAsync(ApiRoutes.WorkerComplete(lease.JobId), completeBody, ct).ConfigureAwait(false);
             if (!done.IsSuccessStatusCode)
             {
-                var err = await done.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                await FailRemoteAsync(jobHttp, lease.JobId, $"Complete failed: {(int)done.StatusCode} {err}", ct).ConfigureAwait(false);
+                var details = await HttpFailureDetails.FromResponseAsync(
+                        "complete", 1, 1, done, ct)
+                    .ConfigureAwait(false);
+                _log.LogError("Job {JobId} complete failed.\n{Details}", lease.JobId, details);
+                await FailRemoteAsync(jobHttp, lease.JobId, HttpFailureDetails.Persist(details), ct).ConfigureAwait(false);
                 return;
             }
 
@@ -267,8 +270,8 @@ public sealed class Worker : BackgroundService
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Error processing job {JobId}.", lease.JobId);
-            await FailRemoteAsync(jobHttp, lease.JobId, ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message, ct).ConfigureAwait(false);
+            _log.LogError(ex, "Error processing job {JobId}.\n{Details}", lease.JobId, ex.Message);
+            await FailRemoteAsync(jobHttp, lease.JobId, HttpFailureDetails.Persist(ex.Message), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -284,6 +287,23 @@ public sealed class Worker : BackgroundService
         }
     }
 
+    private static MultipartFormDataContent BuildSignedUpload(string tempRoot, JobManifestDto manifest)
+    {
+        var mp = new MultipartFormDataContent();
+        for (var i = 0; i < manifest.Files.Count; i++)
+        {
+            var entry = manifest.Files[i];
+            var normalizedRel = PathSafety.NormalizeRelativePath(entry.RelativePath);
+            var path = Path.GetFullPath(Path.Combine(tempRoot, normalizedRel));
+            var stream = File.OpenRead(path);
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            mp.Add(fileContent, $"file_{i}", Path.GetFileName(path));
+        }
+
+        return mp;
+    }
+
     private async Task FailRemoteAsync(HttpClient http, string jobId, string error, CancellationToken ct)
     {
         _log.LogError("Job {JobId} failed: {Error}", jobId, error);
@@ -294,8 +314,9 @@ public sealed class Worker : BackgroundService
             using var resp = await http.PostAsync(ApiRoutes.WorkerFail(jobId), content, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
-                var respBody = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                _log.LogWarning("FailRemote returned {Status}: {Body}", (int)resp.StatusCode, respBody);
+                var details = await HttpFailureDetails.FromResponseAsync("fail notify", 1, 1, resp, ct)
+                    .ConfigureAwait(false);
+                _log.LogWarning("FailRemote for job {JobId}:\n{Details}", jobId, details);
             }
         }
         catch (Exception ex)
@@ -311,7 +332,11 @@ public sealed class Worker : BackgroundService
             using var content = new StringContent("{}", Encoding.UTF8, "application/json");
             using var resp = await http.PostAsync(ApiRoutes.WorkerHeartbeat(jobId), content, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
-                _log.LogDebug("Heartbeat for job {JobId} returned {Status}.", jobId, (int)resp.StatusCode);
+            {
+                var details = await HttpFailureDetails.FromResponseAsync("heartbeat", 1, 1, resp, ct)
+                    .ConfigureAwait(false);
+                _log.LogDebug("Heartbeat for job {JobId}:\n{Details}", jobId, details);
+            }
         }
         catch (Exception ex)
         {
