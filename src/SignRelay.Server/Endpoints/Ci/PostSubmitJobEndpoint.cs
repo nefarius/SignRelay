@@ -117,13 +117,14 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
             ServerHttpError.Log(_log, HttpContext, 400, ex.Message);
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
             foreach (var (_, s, _) in inputs)
                 await s.DisposeAsync().ConfigureAwait(false);
 
             // Infrastructure failures are 500 with a generic message
             AddError("An internal error occurred. Please try again.");
+            _log.LogError(ex, "Submit job failed.");
             ServerHttpError.Log(_log, HttpContext, 500, "An internal error occurred. Please try again.");
             await Send.ErrorsAsync(500, ct).ConfigureAwait(false);
         }

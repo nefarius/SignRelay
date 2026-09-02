@@ -10,6 +10,7 @@ public static class HttpFailureDetails
 {
     public const int PersistMaxChars = 16_000;
     public const string TruncationMarker = "\n[truncated]";
+    private const int MaxBodyReadChars = PersistMaxChars * 2;
 
     private static readonly HashSet<string> SensitiveHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -34,7 +35,7 @@ public static class HttpFailureDetails
         string? bodyReadError = null;
         try
         {
-            body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            body = await ReadResponseBodyAsync(response.Content, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -145,6 +146,26 @@ public static class HttpFailureDetails
                 continue;
             list.Add($"{header.Key}: {string.Join(", ", header.Value)}");
         }
+    }
+
+    private static async Task<string> ReadResponseBodyAsync(HttpContent content, CancellationToken ct)
+    {
+        await using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var reader = new StreamReader(stream);
+        var buffer = new char[MaxBodyReadChars];
+        var read = await reader.ReadBlockAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+        if (read == 0)
+            return "";
+
+        var text = new string(buffer, 0, read);
+        if (read == MaxBodyReadChars)
+        {
+            var extra = await reader.ReadAsync(buffer.AsMemory(0, 1), ct).ConfigureAwait(false);
+            if (extra > 0)
+                text += TruncationMarker;
+        }
+
+        return text;
     }
 
     private static string RequestPath(HttpRequestMessage? request)

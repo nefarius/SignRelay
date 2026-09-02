@@ -21,6 +21,15 @@ public sealed class LeaseDownloadPathTests
     }
 
     [Fact]
+    public void Accepts_root_relative_api_paths()
+    {
+        var path = ApiRoutes.WorkerUnsignedByIndex(JobId, 0);
+        Assert.StartsWith("/", path);
+        Assert.True(LeaseDownloadPath.TryValidateOne(JobId, 0, path, out var error));
+        Assert.Null(error);
+    }
+
+    [Fact]
     public void Rejects_absolute_uri()
     {
         var paths = new[] { "https://evil.example/api/v1/worker/jobs/" + JobId + "/files/0/unsigned" };

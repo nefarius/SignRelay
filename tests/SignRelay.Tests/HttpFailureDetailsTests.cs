@@ -91,4 +91,19 @@ public sealed class HttpFailureDetailsTests
         Assert.Contains("Job id is invalid.", text);
         Assert.Contains("signed download", text);
     }
+
+    [Fact]
+    public async Task FromResponseAsync_bounds_large_body_reads()
+    {
+        var huge = new string('x', HttpFailureDetails.PersistMaxChars * 3);
+        using var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(huge),
+            RequestMessage = new HttpRequestMessage(HttpMethod.Get, "/x")
+        };
+
+        var text = await HttpFailureDetails.FromResponseAsync("download", 1, 1, response, CancellationToken.None);
+        Assert.Contains(HttpFailureDetails.TruncationMarker, text);
+        Assert.DoesNotContain(huge, text);
+    }
 }

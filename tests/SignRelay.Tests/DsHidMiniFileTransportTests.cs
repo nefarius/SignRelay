@@ -203,6 +203,22 @@ public sealed class DsHidMiniFileTransportTests : IDisposable
     }
 
     [Fact]
+    public void Cli_rejects_empty_signed_download_paths_list()
+    {
+        var jobId = "9694ce9d0d174c1db0a5ccde585784b1";
+        var submit = new SubmitJobResponse
+        {
+            JobId = jobId,
+            JobToken = "token",
+            ExpiresAtUtc = DateTimeOffset.UtcNow.AddHours(1),
+            SignedDownloadPaths = []
+        };
+
+        Assert.False(LeaseDownloadPath.TryValidateSigned(jobId, submit.SignedDownloadPaths, 2, out var error));
+        Assert.Contains("count (0)", error);
+    }
+
+    [Fact]
     public void Cli_falls_back_to_legacy_path_when_server_omits_signed_paths()
     {
         var jobId = "9694ce9d0d174c1db0a5ccde585784b1";

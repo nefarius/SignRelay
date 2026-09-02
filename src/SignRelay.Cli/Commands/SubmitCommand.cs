@@ -291,7 +291,7 @@ public static class SubmitCommand
                     return 3;
                 }
                 submitResponse = parsed;
-                if (submitResponse.SignedDownloadPaths is { Count: > 0 }
+                if (submitResponse.SignedDownloadPaths is not null
                     && !LeaseDownloadPath.TryValidateSigned(
                         submitResponse.JobId,
                         submitResponse.SignedDownloadPaths,
@@ -501,7 +501,7 @@ public static class SubmitCommand
 
     internal static string ResolveSignedDownloadUrl(SubmitJobResponse submit, int index, string relativeName)
     {
-        if (submit.SignedDownloadPaths is { Count: > 0 })
+        if (submit.SignedDownloadPaths is not null)
         {
             if (!LeaseDownloadPath.TryValidateSigned(submit.JobId, submit.SignedDownloadPaths, submit.SignedDownloadPaths.Count, out var error))
                 throw new InvalidOperationException(error);

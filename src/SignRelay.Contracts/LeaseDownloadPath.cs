@@ -38,7 +38,7 @@ public static class LeaseDownloadPath
             return false;
         }
 
-        if (Uri.TryCreate(path, UriKind.Absolute, out _))
+        if (IsAbsoluteUri(path))
         {
             error = $"Lease download path '{path}' is an absolute URI; only relative paths are accepted.";
             return false;
@@ -78,7 +78,7 @@ public static class LeaseDownloadPath
 
         for (var i = 0; i < paths.Count; i++)
         {
-            if (string.IsNullOrWhiteSpace(paths[i]) || Uri.TryCreate(paths[i], UriKind.Absolute, out _))
+            if (string.IsNullOrWhiteSpace(paths[i]) || IsAbsoluteUri(paths[i]))
             {
                 error = $"Signed download path '{paths[i]}' is missing or absolute.";
                 return false;
@@ -96,4 +96,12 @@ public static class LeaseDownloadPath
         error = null;
         return true;
     }
+
+    /// <summary>
+    /// Root-relative API paths (e.g. <c>/api/v1/...</c>) are allowed. On Linux,
+    /// <see cref="Uri.TryCreate(string, UriKind, out Uri?)"/> treats those as absolute file URIs.
+    /// </summary>
+    internal static bool IsAbsoluteUri(string path) =>
+        path.StartsWith("//", StringComparison.Ordinal)
+        || path.Contains("://", StringComparison.Ordinal);
 }

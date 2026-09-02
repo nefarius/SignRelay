@@ -72,6 +72,7 @@ public static class HttpTransfer
                 request = requestFactory();
                 lastResponse = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
                     .ConfigureAwait(false);
+                request.Dispose();
                 request = null;
 
                 if (lastResponse.IsSuccessStatusCode)

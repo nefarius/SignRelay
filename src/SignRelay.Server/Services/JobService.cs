@@ -396,22 +396,7 @@ public sealed class JobService
         return (stream, Path.GetFileName(entry.RelativePath));
     }
 
-    public string GetJobArtifactDirectory(string jobId)
-    {
-        if (string.IsNullOrWhiteSpace(jobId)
-            || jobId.Contains("..", StringComparison.Ordinal)
-            || jobId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            throw new InvalidOperationException("Invalid job id.");
-
-        var jobsRoot = Path.GetFullPath(Path.Combine(JobsRoot, "jobs"));
-        var dir = Path.GetFullPath(Path.Combine(jobsRoot, jobId));
-        if (!PathSafety.IsUnderRoot(dir, jobsRoot)
-            && !string.Equals(dir, jobsRoot, OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal))
-            throw new InvalidOperationException("Job artifact path escaped the storage root.");
-        return dir;
-    }
+    public string GetJobArtifactDirectory(string jobId) => ResolveJobDir(jobId);
 
     public JobEventPayload ToPayload(JobEntity j) =>
         new()
