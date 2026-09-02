@@ -37,6 +37,10 @@ public static class HttpFailureDetails
         {
             body = await ReadResponseBodyAsync(response.Content, ct).ConfigureAwait(false);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             bodyReadError = ex.Message;
@@ -153,7 +157,7 @@ public static class HttpFailureDetails
         await using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         using var reader = new StreamReader(stream);
         var buffer = new char[MaxBodyReadChars];
-        var read = await reader.ReadBlockAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+        var read = await reader.ReadBlockAsync(buffer.AsMemory(), ct).ConfigureAwait(false);
         if (read == 0)
             return "";
 
