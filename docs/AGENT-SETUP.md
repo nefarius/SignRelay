@@ -119,7 +119,7 @@ Machine settings under `%ProgramData%` are left alone. Re-run `install` only whe
 | `Health: 404 Not Found` (body like `404 page not found`) | Usually the reverse proxy has no router for the relay — often Traefik dropped an `unhealthy` container; see [DEPLOYMENT.md](DEPLOYMENT.md) (Traefik and Docker HEALTHCHECK). Verify `RelayUrl` and that `/health` is reachable first; this is usually not an agent config error. |
 | Agent stops after 401/403 | Token mismatch with `SignRelay__AgentToken` |
 | Service running but no logs | Check Event Viewer and `%ProgramData%\SignRelay\Agent\logs\` |
-| Smart-card / token PIN UI never appears | Ensure `SigningExecution` is `Auto` or `InteractiveUser`, service is LocalSystem, and a user is logged on at the **physical console**. The agent launches signtool on `winsta0\default` so CSP dialogs can show; RDP-only sessions are unsupported. If the log shows `0x800704c7` / `ERROR_CANCELLED`, the PIN dialog was cancelled or could not be displayed. |
+| Smart-card / token PIN UI never appears | Ensure `SigningExecution` is `Auto` or `InteractiveUser`, service is LocalSystem, and a user is logged on at the **physical console**. The agent launches signtool on `winsta0\default` so CSP dialogs can show; RDP-only sessions are unsupported. The console host is hidden after launch (not via `SW_HIDE` on signtool, which cancels PIN UI). If the log shows `0x800704c7` / `ERROR_CANCELLED`, the PIN dialog was cancelled or could not be displayed. |
 
 ## Related
 

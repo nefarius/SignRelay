@@ -8,6 +8,13 @@ using SignRelay.Agent;
 using SignRelay.Agent.Options;
 using SignRelay.Agent.Service;
 
+if (InteractiveConsoleExec.IsVerb(args))
+{
+    if (OperatingSystem.IsWindows())
+        return InteractiveConsoleExec.Run(args);
+    return 2;
+}
+
 if (ServiceCommands.IsServiceVerb(args))
     return await ServiceCommands.RunAsync(args).ConfigureAwait(false);
 

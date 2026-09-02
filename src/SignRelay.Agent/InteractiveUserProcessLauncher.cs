@@ -217,25 +217,37 @@ public sealed class InteractiveUserProcessLauncher
             // Must target the interactive desktop. Without lpDesktop=winsta0\default,
             // CreateProcessAsUser lands on a non-interactive window station and CSP/PIN
             // dialogs never appear (signtool then fails with 0x800704c7 / ERROR_CANCELLED).
-            // STARTF_USESHOWWINDOW + SW_HIDE hides the console-subsystem window only;
-            // GUI windows (CSP/PIN) still appear on winsta0\default. Do not use
-            // CREATE_NO_WINDOW or DETACHED_PROCESS — those change console allocation
-            // and can suppress hardware-token UI.
+            // Do not put SW_HIDE on the target STARTUPINFO — CSP/PIN dialogs often
+            // ShowWindow(SW_SHOWDEFAULT) and then inherit that hide state.
+            // Session 0 cannot ShowWindow a Session 1 console, so a same-session helper
+            // hides only the console HWND after the target is created.
             var desktopPtr = Marshal.StringToHGlobalUni(@"winsta0\default");
             try
             {
+                var launchExe = executable;
+                var launchArgs = arguments;
+                var creationFlags = CREATE_UNICODE_ENVIRONMENT;
+                if (InteractiveConsoleExec.TryResolveHostLaunch(out var hostExe, out var hostPrefix))
+                {
+                    var helperArgs = new List<string>(hostPrefix.Count + 3 + arguments.Count);
+                    helperArgs.AddRange(hostPrefix);
+                    helperArgs.AddRange(InteractiveConsoleExec.BuildArguments(executable, arguments));
+                    launchExe = hostExe;
+                    launchArgs = helperArgs;
+                    creationFlags |= CREATE_NO_WINDOW;
+                }
+
                 var si = new STARTUPINFOW
                 {
                     cb = Marshal.SizeOf<STARTUPINFOW>(),
                     lpDesktop = desktopPtr,
-                    dwFlags = (int)(STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES),
-                    wShowWindow = SW_HIDE,
+                    dwFlags = (int)STARTF_USESTDHANDLES,
                     hStdInput = hNul,
                     hStdOutput = hOut,
                     hStdError = hErr,
                 };
 
-                var cmdLine = new StringBuilder(BuildCommandLine(executable, arguments), 32768);
+                var cmdLine = new StringBuilder(BuildCommandLine(launchExe, launchArgs), 32768);
 
                 _log.LogInformation(
                     "Launching interactive process {Executable} on winsta0\\default (CSP/PIN UI enabled).",
@@ -243,12 +255,12 @@ public sealed class InteractiveUserProcessLauncher
 
                 if (!CreateProcessAsUserW(
                         token.DangerousGetHandle(),
-                        executable,
+                        launchExe,
                         cmdLine,
                         IntPtr.Zero,
                         IntPtr.Zero,
                         bInheritHandles: true,
-                        CREATE_UNICODE_ENVIRONMENT,
+                        creationFlags,
                         env,
                         workingDirectory,
                         ref si,
@@ -497,10 +509,9 @@ public sealed class InteractiveUserProcessLauncher
     private const uint FILE_ATTRIBUTE_NORMAL = 0x80;
     private const uint FILE_SHARE_READ = 1;
     private const uint FILE_SHARE_WRITE = 2;
-    private const uint STARTF_USESHOWWINDOW = 0x00000001;
     private const uint STARTF_USESTDHANDLES = 0x00000100;
-    private const ushort SW_HIDE = 0;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+    private const uint CREATE_NO_WINDOW = 0x08000000;
     private const uint WAIT_OBJECT_0 = 0;
     private const uint WAIT_TIMEOUT = 0x00000102;
     private const uint WAIT_FAILED = 0xFFFFFFFF;
