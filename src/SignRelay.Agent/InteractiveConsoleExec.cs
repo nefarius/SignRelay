@@ -128,12 +128,25 @@ internal static class InteractiveConsoleExec
         var job = IntPtr.Zero;
         try
         {
-            job = CreateKillOnCloseJob();
-            if (job != IntPtr.Zero)
-                AssignProcessToJobObject(job, pi.hProcess);
+            try
+            {
+                job = CreateKillOnCloseJob();
+                if (!AssignProcessToJobObject(job, pi.hProcess))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            catch
+            {
+                TerminateProcess(pi.hProcess, exitCode: 1);
+                throw;
+            }
 
             TryHideConsoleWindow((uint)pi.dwProcessId);
-            ResumeThread(pi.hThread);
+            if (ResumeThread(pi.hThread) == uint.MaxValue)
+            {
+                var err = Marshal.GetLastWin32Error();
+                TerminateProcess(pi.hProcess, exitCode: 1);
+                throw new Win32Exception(err);
+            }
             CloseHandle(pi.hThread);
             pi.hThread = IntPtr.Zero;
 
@@ -190,7 +203,7 @@ internal static class InteractiveConsoleExec
     {
         var job = CreateJobObjectW(IntPtr.Zero, null);
         if (job == IntPtr.Zero)
-            return IntPtr.Zero;
+            throw new Win32Exception(Marshal.GetLastWin32Error());
 
         var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
         {
@@ -207,8 +220,9 @@ internal static class InteractiveConsoleExec
             Marshal.StructureToPtr(info, ptr, false);
             if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, ptr, (uint)size))
             {
+                var err = Marshal.GetLastWin32Error();
                 CloseHandle(job);
-                return IntPtr.Zero;
+                throw new Win32Exception(err);
             }
         }
         finally
@@ -328,6 +342,10 @@ internal static class InteractiveConsoleExec
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern uint ResumeThread(IntPtr hThread);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateProcess(IntPtr hProcess, uint exitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
