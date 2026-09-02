@@ -274,12 +274,15 @@ public static class SubmitCommand
 
                 using var post = await http.PostAsync(ApiRoutes.Jobs, content, cts.Token).ConfigureAwait(false);
                 // MultipartFormDataContent disposes here, closing all file handles before we need them again
-                var postBody = await post.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
                 if (!post.IsSuccessStatusCode)
                 {
-                    await Console.Error.WriteLineAsync($"Submit failed: {(int)post.StatusCode} {post.ReasonPhrase}\n{postBody}").ConfigureAwait(false);
+                    var details = await HttpFailureDetails.FromResponseAsync("submit", 1, 1, post, cts.Token)
+                        .ConfigureAwait(false);
+                    await Console.Error.WriteLineAsync(details).ConfigureAwait(false);
                     return 3;
                 }
+
+                var postBody = await post.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
 
                 var parsed = JsonSerializer.Deserialize<SubmitJobResponse>(postBody, Json);
                 if (parsed is null)
@@ -288,6 +291,16 @@ public static class SubmitCommand
                     return 3;
                 }
                 submitResponse = parsed;
+                if (submitResponse.SignedDownloadPaths is not null
+                    && !LeaseDownloadPath.TryValidateSigned(
+                        submitResponse.JobId,
+                        submitResponse.SignedDownloadPaths,
+                        normalized.Count,
+                        out var signedPathError))
+                {
+                    await Console.Error.WriteLineAsync(signedPathError).ConfigureAwait(false);
+                    return 3;
+                }
             }
             // Input file handles are now closed (MultipartFormDataContent disposed above)
 
@@ -349,7 +362,8 @@ public static class SubmitCommand
                     }
 
                     var tmpPath = finalPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-                    await DownloadToTempAsync(http, submitResponse.JobId, rel, tmpPath, cts.Token).ConfigureAwait(false);
+                    var url = ResolveSignedDownloadUrl(submitResponse, i, rel);
+                    await DownloadToTempAsync(http, url, i, rel, tmpPath, cts.Token).ConfigureAwait(false);
                     temps.Add((tmpPath, finalPath));
                 }
 
@@ -447,7 +461,11 @@ public static class SubmitCommand
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, ApiRoutes.JobEvents(jobId));
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var details = await HttpFailureDetails.FromResponseAsync("events", 1, 1, response, ct).ConfigureAwait(false);
+            throw new HttpRequestException(details, null, response.StatusCode);
+        }
         await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         using var reader = new StreamReader(stream);
 
@@ -481,21 +499,34 @@ public static class SubmitCommand
         }
     }
 
+    internal static string ResolveSignedDownloadUrl(SubmitJobResponse submit, int index, string relativeName)
+    {
+        if (submit.SignedDownloadPaths is not null)
+        {
+            if (!LeaseDownloadPath.TryValidateSigned(submit.JobId, submit.SignedDownloadPaths, submit.SignedDownloadPaths.Count, out var error))
+                throw new InvalidOperationException(error);
+            if (index < 0 || index >= submit.SignedDownloadPaths.Count)
+                throw new InvalidOperationException($"Signed download path index {index} is out of range.");
+            return submit.SignedDownloadPaths[index].TrimStart('/');
+        }
+
+        return ApiRoutes.JobSignedFile(submit.JobId, relativeName).TrimStart('/');
+    }
+
     private static async Task DownloadToTempAsync(
         HttpClient http,
-        string jobId,
+        string url,
+        int index,
         string relativeName,
         string tmpPath,
         CancellationToken ct)
     {
-        using var response = await http.GetAsync(
-            ApiRoutes.JobSignedFile(jobId, relativeName),
-            HttpCompletionOption.ResponseHeadersRead,
-            ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        await using var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var fs = File.Create(tmpPath);
-        await input.CopyToAsync(fs, ct).ConfigureAwait(false);
+        await HttpTransfer.DownloadToFileAsync(
+                http,
+                url,
+                tmpPath,
+                $"signed download [{index}] {relativeName}",
+                ct)
+            .ConfigureAwait(false);
     }
 }

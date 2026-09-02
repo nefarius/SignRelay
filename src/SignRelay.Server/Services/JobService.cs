@@ -191,33 +191,51 @@ public sealed class JobService
             return null;
         }
 
-        var paths = manifest.Files.Select(f => ApiRoutes.WorkerUnsigned(next.Id, f.RelativePath)).ToList();
+        var paths = Enumerable.Range(0, manifest.Files.Count)
+            .Select(i => ApiRoutes.WorkerUnsignedByIndex(next.Id, i))
+            .ToList();
         _hub.Publish(next.Id, new JobEventPayload { Type = "status", Status = JobStatus.Leased, Error = null });
 
         return new LeaseResult(next.Id, manifest, paths, plainLeaseToken, leaseExpiry);
     }
 
+    public IReadOnlyList<string> SignedDownloadPaths(string jobId, int fileCount)
+    {
+        EnsureValidJobId(jobId);
+        return Enumerable.Range(0, fileCount).Select(i => ApiRoutes.JobSignedFileByIndex(jobId, i)).ToList();
+    }
+
     public async Task<Stream?> OpenUnsignedAsync(string jobId, string relativePath, CancellationToken ct)
     {
+        EnsureValidJobId(jobId);
         var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
         if (job is null)
             return null;
         if (job.Status is not (JobStatus.Leased or JobStatus.Signing))
             return null;
 
-        var rel = PathSafety.NormalizeRelativePath(relativePath);
-        var root = Path.GetFullPath(Path.Combine(JobsRoot, "jobs", jobId, "unsigned"));
-        var path = Path.GetFullPath(Path.Combine(root, rel));
-        if (!PathSafety.IsUnderRoot(path, root))
-            return null;
-        if (!File.Exists(path))
+        return OpenJobFile(jobId, "unsigned", relativePath);
+    }
+
+    public async Task<(Stream Stream, string FileName)?> OpenUnsignedByIndexAsync(string jobId, int index, CancellationToken ct)
+    {
+        EnsureValidJobId(jobId);
+        var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
+        if (job is null || job.Status is not (JobStatus.Leased or JobStatus.Signing))
             return null;
 
-        return File.OpenRead(path);
+        if (!TryManifestFile(job, index, out var entry))
+            return null;
+
+        var stream = OpenJobFile(jobId, "unsigned", entry.RelativePath);
+        if (stream is null)
+            return null;
+        return (stream, Path.GetFileName(entry.RelativePath));
     }
 
     public async Task SaveSignedFilesAsync(string jobId, IReadOnlyList<IFormFile> orderedSignedFiles, CancellationToken ct)
     {
+        EnsureValidJobId(jobId);
         var job = await _db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false)
                   ?? throw new InvalidOperationException("Job not found.");
 
@@ -238,7 +256,7 @@ public sealed class JobService
         job.Status = JobStatus.Signing;
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        var signedRoot = Path.Combine(JobsRoot, "jobs", jobId, "signed");
+        var signedRoot = ResolveJobSubdir(jobId, "signed");
         Directory.CreateDirectory(signedRoot);
 
         var tmpFiles = new List<string>();
@@ -253,7 +271,7 @@ public sealed class JobService
 
                 var rel = PathSafety.NormalizeRelativePath(entry.RelativePath);
                 var dest = Path.GetFullPath(Path.Combine(signedRoot, rel));
-                if (!PathSafety.IsUnderRoot(dest, signedRoot))
+                if (!PathSafety.IsUnderRoot(dest, signedRoot) || !IsUnderJobsRoot(signedRoot))
                     throw new InvalidOperationException($"Path escape detected for '{rel}'.");
 
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
@@ -282,6 +300,7 @@ public sealed class JobService
 
     public async Task CompleteJobAsync(string jobId, CancellationToken ct)
     {
+        EnsureValidJobId(jobId);
         var job = await _db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false)
                   ?? throw new InvalidOperationException("Job not found.");
 
@@ -291,7 +310,7 @@ public sealed class JobService
         var manifest = JsonSerializer.Deserialize<JobManifestDto>(job.ManifestJson, Json)
                        ?? throw new InvalidOperationException("Invalid manifest.");
 
-        var signedRoot = Path.Combine(JobsRoot, "jobs", jobId, "signed");
+        var signedRoot = ResolveJobSubdir(jobId, "signed");
         foreach (var entry in manifest.Files)
         {
             var rel = PathSafety.NormalizeRelativePath(entry.RelativePath);
@@ -313,6 +332,7 @@ public sealed class JobService
 
     public async Task FailJobAsync(string jobId, string error, CancellationToken ct)
     {
+        EnsureValidJobId(jobId);
         var job = await _db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
         if (job is null)
             return;
@@ -321,20 +341,21 @@ public sealed class JobService
         if (job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.TimedOut)
             return;
 
-        var truncated = error.Length > 16_000 ? error[..16_000] : error;
+        _log.LogWarning("Job {JobId} failed: {Error}", jobId, error);
+        var persisted = HttpFailureDetails.Persist(error);
 
         job.Status = JobStatus.Failed;
         job.CompletedUtc = DateTimeOffset.UtcNow;
-        job.ErrorMessage = truncated;
+        job.ErrorMessage = persisted;
         job.LeaseTokenHash = null;
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = truncated });
-        _log.LogWarning("Job {JobId} failed: {Error}", jobId, truncated);
+        _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = persisted });
     }
 
     public async Task ExtendLeaseAsync(string jobId, CancellationToken ct)
     {
+        EnsureValidJobId(jobId);
         var job = await _db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
         if (job is null || job.Status is not (JobStatus.Leased or JobStatus.Signing))
             return;
@@ -343,26 +364,39 @@ public sealed class JobService
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<JobEntity?> GetJobAsync(string jobId, CancellationToken ct) =>
-        await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
+    public async Task<JobEntity?> GetJobAsync(string jobId, CancellationToken ct)
+    {
+        EnsureValidJobId(jobId);
+        return await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
+    }
 
     public async Task<Stream?> OpenSignedAsync(string jobId, string relativePath, CancellationToken ct)
     {
+        EnsureValidJobId(jobId);
         var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
         if (job is null || job.Status != JobStatus.Succeeded)
             return null;
 
-        var rel = PathSafety.NormalizeRelativePath(relativePath);
-        var root = Path.GetFullPath(Path.Combine(JobsRoot, "jobs", jobId, "signed"));
-        var path = Path.GetFullPath(Path.Combine(root, rel));
-        if (!PathSafety.IsUnderRoot(path, root))
-            return null;
-
-        return File.Exists(path) ? File.OpenRead(path) : null;
+        return OpenJobFile(jobId, "signed", relativePath);
     }
 
-    public string GetJobArtifactDirectory(string jobId) =>
-        Path.GetFullPath(Path.Combine(JobsRoot, "jobs", jobId));
+    public async Task<(Stream Stream, string FileName)?> OpenSignedByIndexAsync(string jobId, int index, CancellationToken ct)
+    {
+        EnsureValidJobId(jobId);
+        var job = await _db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct).ConfigureAwait(false);
+        if (job is null || job.Status != JobStatus.Succeeded)
+            return null;
+
+        if (!TryManifestFile(job, index, out var entry))
+            return null;
+
+        var stream = OpenJobFile(jobId, "signed", entry.RelativePath);
+        if (stream is null)
+            return null;
+        return (stream, Path.GetFileName(entry.RelativePath));
+    }
+
+    public string GetJobArtifactDirectory(string jobId) => ResolveJobDir(jobId);
 
     public JobEventPayload ToPayload(JobEntity j) =>
         new()
@@ -371,6 +405,62 @@ public sealed class JobService
             Status = j.Status,
             Error = j.ErrorMessage
         };
+
+    internal static void EnsureValidJobId(string jobId)
+    {
+        if (!JobIdFormat.IsValid(jobId))
+            throw new InvalidOperationException("Invalid job id.");
+    }
+
+    internal string ResolveJobDir(string jobId)
+    {
+        EnsureValidJobId(jobId);
+        var jobsRoot = Path.GetFullPath(Path.Combine(JobsRoot, "jobs"));
+        var dir = Path.GetFullPath(Path.Combine(jobsRoot, jobId));
+        if (!PathSafety.IsUnderRoot(dir, jobsRoot))
+            throw new InvalidOperationException("Job artifact path escaped the storage root.");
+        return dir;
+    }
+
+    internal string ResolveJobSubdir(string jobId, string kind)
+    {
+        var jobDir = ResolveJobDir(jobId);
+        var sub = Path.GetFullPath(Path.Combine(jobDir, kind));
+        if (!PathSafety.IsUnderRoot(sub, jobDir))
+            throw new InvalidOperationException("Job artifact path escaped the storage root.");
+        return sub;
+    }
+
+    internal bool IsUnderJobsRoot(string fullPath)
+    {
+        var jobsRoot = Path.GetFullPath(Path.Combine(JobsRoot, "jobs"));
+        return PathSafety.IsUnderRoot(fullPath, jobsRoot)
+               || string.Equals(Path.GetFullPath(fullPath), jobsRoot, OperatingSystem.IsWindows()
+                   ? StringComparison.OrdinalIgnoreCase
+                   : StringComparison.Ordinal);
+    }
+
+    private Stream? OpenJobFile(string jobId, string kind, string relativePath)
+    {
+        var rel = PathSafety.NormalizeRelativePath(relativePath);
+        var root = ResolveJobSubdir(jobId, kind);
+        var path = Path.GetFullPath(Path.Combine(root, rel));
+        if (!PathSafety.IsUnderRoot(path, root) || !IsUnderJobsRoot(path))
+            return null;
+        return File.Exists(path) ? File.OpenRead(path) : null;
+    }
+
+    private bool TryManifestFile(JobEntity job, int index, out JobFileEntry entry)
+    {
+        entry = null!;
+        if (index < 0)
+            return false;
+        var manifest = JsonSerializer.Deserialize<JobManifestDto>(job.ManifestJson, Json);
+        if (manifest?.Files is null || index >= manifest.Files.Count)
+            return false;
+        entry = manifest.Files[index];
+        return true;
+    }
 
     private static void TrySilentDelete(string path, bool recursive)
     {

@@ -128,7 +128,7 @@ public sealed class JobSweeperTests : IDisposable
     [Fact]
     public async Task SweepOnceAsync_PurgesTerminalJobPastRecordRetention()
     {
-        var id = "purge-old";
+        var id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1";
         var completed = DateTimeOffset.UtcNow - TimeSpan.FromDays(8);
         await SeedAsync(MakeJob(id, JobStatus.Succeeded, completedUtc: completed));
         // No artifact directory — already cleared.
@@ -141,7 +141,7 @@ public sealed class JobSweeperTests : IDisposable
     [Fact]
     public async Task SweepOnceAsync_KeepsRowInsideRecordRetention_DeletesArtifacts()
     {
-        var id = "purge-recent";
+        var id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2";
         // Past ArtifactCleanupDelay (1h) but inside JobRecordRetention (7d)
         var completed = DateTimeOffset.UtcNow - TimeSpan.FromHours(2);
         await SeedAsync(MakeJob(id, JobStatus.Succeeded, completedUtc: completed));
@@ -156,7 +156,7 @@ public sealed class JobSweeperTests : IDisposable
     [Fact]
     public async Task SweepOnceAsync_DoesNotPurgeNonTerminalJob()
     {
-        var id = "pending-old";
+        var id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3";
         // Non-terminal: never eligible for cleanup/purge regardless of timestamps
         await SeedAsync(MakeJob(
             id,
@@ -175,7 +175,7 @@ public sealed class JobSweeperTests : IDisposable
     [Fact]
     public async Task SweepOnceAsync_LeavesArtifactsBeforeCleanupDelay()
     {
-        var id = "artifacts-fresh";
+        var id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4";
         var completed = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10);
         await SeedAsync(MakeJob(id, JobStatus.Succeeded, completedUtc: completed));
         CreateArtifactDir(id);
@@ -189,7 +189,7 @@ public sealed class JobSweeperTests : IDisposable
     [Fact]
     public async Task SweepOnceAsync_DeletesArtifactsPastCleanupDelay()
     {
-        var id = "artifacts-stale";
+        var id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5";
         var completed = DateTimeOffset.UtcNow - TimeSpan.FromHours(2);
         await SeedAsync(MakeJob(id, JobStatus.Failed, completedUtc: completed));
         CreateArtifactDir(id);
@@ -205,7 +205,7 @@ public sealed class JobSweeperTests : IDisposable
     [Fact]
     public async Task SweepOnceAsync_ExpiresNonTerminalJobPastTtl()
     {
-        var id = "expired";
+        var id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6";
         await SeedAsync(MakeJob(
             id,
             JobStatus.Pending,
@@ -241,7 +241,7 @@ public sealed class JobSweeperTests : IDisposable
     [Fact]
     public async Task SweepOnceAsync_RequeuesStaleLeaseUnderMaxAttempts()
     {
-        var id = "stale-requeue";
+        var id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7";
         await SeedAsync(MakeJob(
             id,
             JobStatus.Leased,
@@ -266,7 +266,7 @@ public sealed class JobSweeperTests : IDisposable
     [Fact]
     public async Task SweepOnceAsync_FailsStaleLeaseAtMaxAttempts()
     {
-        var id = "stale-fail";
+        var id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa8";
         await SeedAsync(MakeJob(
             id,
             JobStatus.Signing,

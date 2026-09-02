@@ -12,8 +12,13 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
 
     private readonly JobService _jobs;
+    private readonly ILogger<PostSubmitJobEndpoint> _log;
 
-    public PostSubmitJobEndpoint(JobService jobs) => _jobs = jobs;
+    public PostSubmitJobEndpoint(JobService jobs, ILogger<PostSubmitJobEndpoint> log)
+    {
+        _jobs = jobs;
+        _log = log;
+    }
 
     public override void Configure()
     {
@@ -28,6 +33,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
         if (!HttpContext.Request.HasFormContentType)
         {
             AddError("Request must be multipart/form-data.");
+            ServerHttpError.Log(_log, HttpContext, 400, "Request must be multipart/form-data.");
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
@@ -36,6 +42,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
         if (string.IsNullOrWhiteSpace(manifestJson))
         {
             AddError("Missing form field 'manifest'.");
+            ServerHttpError.Log(_log, HttpContext, 400, "Missing form field 'manifest'.");
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
@@ -48,6 +55,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
         catch (JsonException)
         {
             AddError("Manifest is not valid JSON.");
+            ServerHttpError.Log(_log, HttpContext, 400, "Manifest is not valid JSON.");
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
@@ -55,6 +63,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
         if (manifest?.Files is not { Count: > 0 })
         {
             AddError("Manifest must contain at least one file entry.");
+            ServerHttpError.Log(_log, HttpContext, 400, "Manifest must contain at least one file entry.");
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
             return;
         }
@@ -66,6 +75,7 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
             if (f is null || f.Length == 0)
             {
                 AddError($"Missing non-empty form file 'file_{i}'.");
+                ServerHttpError.Log(_log, HttpContext, 400, $"Missing non-empty form file 'file_{i}'.");
                 await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
                 return;
             }
@@ -91,7 +101,8 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
                     {
                         JobId = job.Id,
                         JobToken = token,
-                        ExpiresAtUtc = job.ExpiresUtc
+                        ExpiresAtUtc = job.ExpiresUtc,
+                        SignedDownloadPaths = _jobs.SignedDownloadPaths(job.Id, manifest.Files.Count)
                     },
                     ct)
                 .ConfigureAwait(false);
@@ -103,15 +114,18 @@ public sealed class PostSubmitJobEndpoint : EndpointWithoutRequest<SubmitJobResp
 
             // Validation / business errors are 400
             AddError(ex.Message);
+            ServerHttpError.Log(_log, HttpContext, 400, ex.Message);
             await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
             foreach (var (_, s, _) in inputs)
                 await s.DisposeAsync().ConfigureAwait(false);
 
             // Infrastructure failures are 500 with a generic message
             AddError("An internal error occurred. Please try again.");
+            _log.LogError(ex, "Submit job failed.");
+            ServerHttpError.Log(_log, HttpContext, 500, "An internal error occurred. Please try again.");
             await Send.ErrorsAsync(500, ct).ConfigureAwait(false);
         }
     }

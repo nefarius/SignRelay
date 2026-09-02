@@ -13,11 +13,13 @@ public sealed class GetJobEventsEndpoint : EndpointWithoutRequest
 
     private readonly JobService _jobs;
     private readonly JobEventHub _hub;
+    private readonly ILogger<GetJobEventsEndpoint> _log;
 
-    public GetJobEventsEndpoint(JobService jobs, JobEventHub hub)
+    public GetJobEventsEndpoint(JobService jobs, JobEventHub hub, ILogger<GetJobEventsEndpoint> log)
     {
         _jobs = jobs;
         _hub = hub;
+        _log = log;
     }
 
     public override void Configure()
@@ -28,9 +30,17 @@ public sealed class GetJobEventsEndpoint : EndpointWithoutRequest
 
     public override async Task HandleAsync(CancellationToken ct)
     {
-        var id = Route<string>("id")!;
+        if (!JobRoute.TryBind(Route<string>("id"), out var id))
+        {
+            AddError("Job id is invalid.");
+            ServerHttpError.Log(_log, HttpContext, 400, "Job id is invalid.");
+            await Send.ErrorsAsync(400, ct).ConfigureAwait(false);
+            return;
+        }
+
         if (!JobAccess.CanAccessJob(User, id))
         {
+            ServerHttpError.Log(_log, HttpContext, 401, "Not authorized for this job.");
             await Send.UnauthorizedAsync(ct).ConfigureAwait(false);
             return;
         }

@@ -7,17 +7,12 @@ using SignRelay.Server.Services;
 
 namespace SignRelay.Server.Api.Worker;
 
-/// <summary>
-/// Legacy unsigned download that embeds a relative path in one route segment.
-/// Nested paths require encoded slashes and are rejected by some reverse proxies.
-/// Prefer <see cref="GetWorkerUnsignedFileByIndexEndpoint"/>.
-/// </summary>
-public sealed class GetWorkerUnsignedFileEndpoint : EndpointWithoutRequest
+public sealed class GetWorkerUnsignedFileByIndexEndpoint : EndpointWithoutRequest
 {
     private readonly JobService _jobs;
-    private readonly ILogger<GetWorkerUnsignedFileEndpoint> _log;
+    private readonly ILogger<GetWorkerUnsignedFileByIndexEndpoint> _log;
 
-    public GetWorkerUnsignedFileEndpoint(JobService jobs, ILogger<GetWorkerUnsignedFileEndpoint> log)
+    public GetWorkerUnsignedFileByIndexEndpoint(JobService jobs, ILogger<GetWorkerUnsignedFileByIndexEndpoint> log)
     {
         _jobs = jobs;
         _log = log;
@@ -25,7 +20,7 @@ public sealed class GetWorkerUnsignedFileEndpoint : EndpointWithoutRequest
 
     public override void Configure()
     {
-        Get($"{ApiRoutes.Prefix}/worker/jobs/{{jobId}}/unsigned/{{fileName}}");
+        Get($"{ApiRoutes.Prefix}/worker/jobs/{{jobId}}/files/{{index}}/unsigned");
         AuthSchemes(SignRelayAuthenticationHandler.SchemeName);
         Policies("Lease");
     }
@@ -41,7 +36,6 @@ public sealed class GetWorkerUnsignedFileEndpoint : EndpointWithoutRequest
             return;
         }
 
-        var fileName = Route<string>("fileName")!;
         var claimedJobId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (claimedJobId != jobId)
         {
@@ -50,18 +44,23 @@ public sealed class GetWorkerUnsignedFileEndpoint : EndpointWithoutRequest
             return;
         }
 
+        var index = Route<int>("index");
         try
         {
-            await using var stream = await _jobs.OpenUnsignedAsync(jobId, fileName, ct).ConfigureAwait(false);
-            if (stream is null)
+            var opened = await _jobs.OpenUnsignedByIndexAsync(jobId, index, ct).ConfigureAwait(false);
+            if (opened is null)
             {
                 ServerHttpError.Log(_log, HttpContext, 404, "Unsigned file not found.");
                 await Send.NotFoundAsync(ct).ConfigureAwait(false);
                 return;
             }
 
-            await Send.StreamAsync(stream, Path.GetFileName(fileName), null, "application/octet-stream", null, false, ct)
-                .ConfigureAwait(false);
+            var (stream, fileName) = opened.Value;
+            await using (stream)
+            {
+                await Send.StreamAsync(stream, fileName, null, "application/octet-stream", null, false, ct)
+                    .ConfigureAwait(false);
+            }
         }
         catch (InvalidOperationException ex)
         {
