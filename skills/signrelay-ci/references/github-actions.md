@@ -13,6 +13,7 @@
     files: |
       ./artifacts/MyApp.exe
       ./artifacts/*.dll
+      ./bin/**/*.exe
     output: ./signed
 ```
 
@@ -28,4 +29,4 @@ Dry-run (no network):
     dry-run: true
 ```
 
-Inputs: `server`, `token`, `files` (globs OK — expanded by the action), `output` | `in-place`, `timeout`, `tool-version`, `dry-run`, `allow-insecure`, `skip-tool-install`.
+Inputs: `server`, `token`, `files` (globs OK — `*`, `?`, and `**` expanded by the action), `output` | `in-place`, `timeout`, `tool-version`, `dry-run`, `allow-insecure`, `skip-tool-install`.

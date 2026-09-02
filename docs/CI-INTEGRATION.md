@@ -42,6 +42,7 @@ Pin a release tag or a floating major tag once you maintain `v1`:
     files: |
       ./artifacts/MyApp.exe
       ./artifacts/*.dll
+      ./bin/**/*.exe
     output: ./signed
     # in-place: true   # mutually exclusive with output
     # timeout: '00:45:00'
@@ -60,7 +61,7 @@ Dry-run (no network) to validate globs and args:
     dry-run: true
 ```
 
-Action inputs: `server`, `token`, `files` (multiline; **globs expanded by the action**), `output` \| `in-place`, `timeout`, `tool-version`, `dry-run`, `allow-insecure`, `skip-tool-install`.
+Action inputs: `server`, `token`, `files` (multiline; **globs expanded by the action**, including `**` globstar), `output` \| `in-place`, `timeout`, `tool-version`, `dry-run`, `allow-insecure`, `skip-tool-install`.
 
 Outputs: `signed-count`, `output-path`.
 
