@@ -1,17 +1,17 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Expand-SignRelayFiles.ps1')
 
-$root = Join-Path $env:TEMP ('signrelay-glob-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin\x86\deep') | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin\ARM64') | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin\x64\nested') | Out-Null
-Set-Content (Join-Path $root 'bin\x86\nefconc.exe') 'a'
-Set-Content (Join-Path $root 'bin\x86\nefconw.exe') 'a'
-Set-Content (Join-Path $root 'bin\x86\deep\skip.exe') 'a'
-Set-Content (Join-Path $root 'bin\ARM64\nefconc.exe') 'a'
-Set-Content (Join-Path $root 'bin\x64\nested\extra.exe') 'a'
-Set-Content (Join-Path $root 'bin\readme.txt') 'no'
-Set-Content (Join-Path $root 'bin\x86\helper.dll') 'no'
+$root = Join-Path ([IO.Path]::GetTempPath()) ('signrelay-glob-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin' 'x86' 'deep') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin' 'ARM64') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin' 'x64' 'nested') | Out-Null
+Set-Content (Join-Path $root 'bin' 'x86' 'nefconc.exe') 'a'
+Set-Content (Join-Path $root 'bin' 'x86' 'nefconw.exe') 'a'
+Set-Content (Join-Path $root 'bin' 'x86' 'deep' 'skip.exe') 'a'
+Set-Content (Join-Path $root 'bin' 'ARM64' 'nefconc.exe') 'a'
+Set-Content (Join-Path $root 'bin' 'x64' 'nested' 'extra.exe') 'a'
+Set-Content (Join-Path $root 'bin' 'readme.txt') 'no'
+Set-Content (Join-Path $root 'bin' 'x86' 'helper.dll') 'no'
 
 Push-Location $root
 try {
