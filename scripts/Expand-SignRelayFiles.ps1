@@ -51,10 +51,16 @@ function ConvertTo-SignRelayGlobRegex([string]$PatternFromRoot) {
   $sb = [System.Text.StringBuilder]::new()
   [void]$sb.Append('(?i)^')
   $needSlash = $false
-  foreach ($seg in ($p -split '/')) {
+  $segments = @($p -split '/')
+  for ($i = 0; $i -lt $segments.Length; $i++) {
+    $seg = $segments[$i]
     if ($seg -eq '**') {
       if ($needSlash) { [void]$sb.Append('/') }
-      [void]$sb.Append('(?:[^/]+/)*')
+      if ($i -eq $segments.Length - 1) {
+        [void]$sb.Append('.*')
+      } else {
+        [void]$sb.Append('(?:[^/]+/)*')
+      }
       $needSlash = $false
       continue
     }
@@ -86,10 +92,10 @@ function Expand-SignRelayFiles([string]$Raw) {
       $leafFilter = Split-Path -Leaf ($remainder.Replace('/', [IO.Path]::DirectorySeparatorChar))
       $gci = @{
         LiteralPath = $searchRoot
-        Filter      = $leafFilter
         File        = $true
         ErrorAction = 'SilentlyContinue'
       }
+      if ($leafFilter -ne '**') { $gci.Filter = $leafFilter }
       # Passing -Recurse:$false is not the same as omitting -Recurse; depth 0
       # yields no files on some PowerShell versions.
       if ($recurse) { $gci.Recurse = $true }

@@ -42,6 +42,13 @@ try {
   if ($binOnlyNames.Count -ne 5) { throw "**/bin/**/*.exe expected 5, got $($binOnlyNames.Count)" }
   if ($binOnlyNames -contains 'bin-backup/x86/evil.exe') { throw '**/bin/**/*.exe matched sibling bin-backup' }
 
+  $terminal = Expand-SignRelayFiles './bin/**'
+  $terminalNames = $terminal | ForEach-Object { [IO.Path]::GetRelativePath($root, $_).Replace('\', '/') }
+  if ($terminalNames.Count -ne 7) { throw "bin/** expected 7 files, got $($terminalNames.Count)" }
+  if ($terminalNames -notcontains 'bin/x86/nefconc.exe') { throw 'bin/** missed nefconc.exe' }
+  if ($terminalNames -notcontains 'bin/readme.txt') { throw 'bin/** missed readme.txt' }
+  if ($terminalNames -contains 'bin-backup/x86/evil.exe') { throw 'bin/** matched sibling bin-backup' }
+
   $searchRoot = Get-SignRelayGlobSearchRoot './bin/**/*.exe'
   Write-Host "search root for ./bin/**/*.exe => $searchRoot"
   $norm = $searchRoot.Replace('\', '/')
