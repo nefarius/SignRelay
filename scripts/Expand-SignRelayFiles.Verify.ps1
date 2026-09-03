@@ -7,6 +7,7 @@ try {
   New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin' 'x86' 'deep') | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin' 'ARM64') | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin' 'x64' 'nested') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $root 'bin-backup' 'x86') | Out-Null
   Set-Content (Join-Path $root 'bin' 'x86' 'nefconc.exe') 'a'
   Set-Content (Join-Path $root 'bin' 'x86' 'nefconw.exe') 'a'
   Set-Content (Join-Path $root 'bin' 'x86' 'deep' 'skip.exe') 'a'
@@ -14,6 +15,7 @@ try {
   Set-Content (Join-Path $root 'bin' 'x64' 'nested' 'extra.exe') 'a'
   Set-Content (Join-Path $root 'bin' 'readme.txt') 'no'
   Set-Content (Join-Path $root 'bin' 'x86' 'helper.dll') 'no'
+  Set-Content (Join-Path $root 'bin-backup' 'x86' 'evil.exe') 'a'
 
   Push-Location $root
   $pushed = $true
@@ -34,6 +36,11 @@ try {
 
   $constrained = Expand-SignRelayFiles './bin/**/x86/*.exe'
   if ($constrained.Count -ne 2) { throw "**/x86/*.exe expected 2, got $($constrained.Count)" }
+
+  $binOnly = Expand-SignRelayFiles '**/bin/**/*.exe'
+  $binOnlyNames = $binOnly | ForEach-Object { [IO.Path]::GetRelativePath($root, $_).Replace('\', '/') }
+  if ($binOnlyNames.Count -ne 5) { throw "**/bin/**/*.exe expected 5, got $($binOnlyNames.Count)" }
+  if ($binOnlyNames -contains 'bin-backup/x86/evil.exe') { throw '**/bin/**/*.exe matched sibling bin-backup' }
 
   $searchRoot = Get-SignRelayGlobSearchRoot './bin/**/*.exe'
   Write-Host "search root for ./bin/**/*.exe => $searchRoot"

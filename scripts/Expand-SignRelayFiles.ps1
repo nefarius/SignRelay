@@ -53,7 +53,8 @@ function ConvertTo-SignRelayGlobRegex([string]$PatternFromRoot) {
   $needSlash = $false
   foreach ($seg in ($p -split '/')) {
     if ($seg -eq '**') {
-      [void]$sb.Append('(?:.*/)*')
+      if ($needSlash) { [void]$sb.Append('/') }
+      [void]$sb.Append('(?:[^/]+/)*')
       $needSlash = $false
       continue
     }
