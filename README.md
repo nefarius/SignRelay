@@ -7,6 +7,9 @@
 
 CI submits files to a small relay; a Windows agent runs `signtool` with your certificate and returns signed artifacts—without putting the signing key on the CI runner.
 
+> [!NOTE]
+> Ahoy, traveler! 👋 This project has been "vibe-coded", meaning that the vast majority of the code has been written with the assistance of AI coding agents. I use my own work in production and value stability and security. Bear in mind, though, that the code you browse might not be an accurate reflection of my personal "style" or taste. The primary goal was to make a useful product, quickly, rather than focus on the development process itself. With that out of the way, if you find it useful, feel free to get inspired by it 😁
+
 ## About
 
 SignRelay is three parts: an **ASP.NET Core** relay ([`SignRelay.Server`](src/SignRelay.Server/)) that stores jobs and streams progress (Server-Sent Events), a **Windows agent** ([`SignRelay.Agent`](src/SignRelay.Agent/)) that leases work and signs with the Windows SDK’s `signtool`, and a **CLI** ([`SignRelay.Cli`](src/SignRelay.Cli/)) for pipelines to submit files and wait for signed outputs.
