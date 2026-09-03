@@ -24,6 +24,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Test Action glob expander
+        shell: pwsh
+        run: ./scripts/Expand-SignRelayFiles.Verify.ps1
+
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -82,8 +86,10 @@ jobs:
       - name: Create sample artifacts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path ./artifacts/sample | Out-Null
-          Set-Content -Path ./artifacts/sample/MyApp.exe -Value 'MZ-fake' -NoNewline
+          New-Item -ItemType Directory -Force -Path ./artifacts/sample/x86 | Out-Null
+          New-Item -ItemType Directory -Force -Path ./artifacts/sample/ARM64 | Out-Null
+          Set-Content -Path ./artifacts/sample/x86/MyApp.exe -Value 'MZ-fake' -NoNewline
+          Set-Content -Path ./artifacts/sample/ARM64/MyApp.exe -Value 'MZ-fake' -NoNewline
           Set-Content -Path ./artifacts/sample/helper.dll -Value 'dll-fake' -NoNewline
 
       - name: Exercise composite action (dry-run)
@@ -92,7 +98,7 @@ jobs:
           server: https://relay.example.com
           token: dry-run-token-0123456789abcdef0123456789
           files: |
-            ./artifacts/sample/MyApp.exe
+            ./artifacts/sample/**/*.exe
             ./artifacts/sample/*.dll
           output: ./artifacts/signed-dry
           dry-run: true

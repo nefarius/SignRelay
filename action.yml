@@ -15,7 +15,7 @@ inputs:
   files:
     description: >
       Multiline list of file paths or globs to sign. Globs are expanded by this action
-      (PowerShell Get-ChildItem); the CLI itself does not expand globs. Fails if zero files match.
+      (*, ?, and ** globstar); the CLI itself does not expand globs. Fails if zero files match.
     required: true
   output:
     description: Directory for signed files (preserves relative paths). Mutually exclusive with in-place.
@@ -132,52 +132,8 @@ runs:
       run: |
         $ErrorActionPreference = 'Stop'
 
-        function Expand-SignRelayFiles([string]$Raw) {
-          $resolved = [System.Collections.Generic.List[string]]::new()
-          $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-          foreach ($line in ($Raw -split "`r?`n")) {
-            $pattern = $line.Trim()
-            if (-not $pattern) { continue }
-
-            $hasGlob = $pattern.Contains('*') -or $pattern.Contains('?')
-            if ($hasGlob) {
-              $parent = Split-Path -Parent $pattern
-              if ([string]::IsNullOrWhiteSpace($parent)) { $parent = '.' }
-              $leaf = Split-Path -Leaf $pattern
-              if (-not (Test-Path -LiteralPath $parent)) {
-                Write-Error "Glob parent directory does not exist: $parent (from pattern '$pattern')"
-                exit 1
-              }
-              $matches = @(Get-ChildItem -Path $parent -Filter $leaf -File -Recurse:$false -ErrorAction SilentlyContinue)
-              # Support ** and nested patterns via -Path when Filter is insufficient
-              if ($pattern -match '\*\*') {
-                $matches = @(Get-ChildItem -Path $pattern -File -Recurse -ErrorAction SilentlyContinue)
-              } elseif ($matches.Count -eq 0) {
-                $matches = @(Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue)
-              }
-              if ($matches.Count -eq 0) {
-                Write-Error "Glob matched zero files: $pattern"
-                exit 1
-              }
-              foreach ($m in $matches) {
-                $full = $m.FullName
-                if ($seen.Add($full)) { $resolved.Add($full) }
-              }
-            } else {
-              $full = [IO.Path]::GetFullPath($pattern)
-              if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
-                Write-Error "File not found: $full"
-                exit 1
-              }
-              if ($seen.Add($full)) { $resolved.Add($full) }
-            }
-          }
-          if ($resolved.Count -eq 0) {
-            Write-Error "No files to sign after expanding inputs.files."
-            exit 1
-          }
-          return $resolved
-        }
+        $actionRoot = if ($env:GITHUB_ACTION_PATH) { $env:GITHUB_ACTION_PATH } else { $PSScriptRoot }
+        . (Join-Path $actionRoot 'scripts/Expand-SignRelayFiles.ps1')
 
         $files = Expand-SignRelayFiles $env:SIGN_RELAY_FILES
 
