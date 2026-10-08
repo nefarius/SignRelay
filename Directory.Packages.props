@@ -10,7 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Shared tooling (applied via Directory.Build.props, excluded from _build) -->
-    <PackageVersion Include="MinVer" Version="7.0.0" />
+    <PackageVersion Include="MinVer" Version="8.0.0" />
     <!-- Server -->
     <PackageVersion Include="FastEndpoints" Version="8.2.0" />
     <PackageVersion Include="FastEndpoints.Swagger" Version="8.2.0" />
