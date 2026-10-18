@@ -43,7 +43,22 @@ jobs:
         run: dotnet test SignRelay.sln -c Release --no-build --verbosity normal
 
       - name: Vulnerability scan
-        run: dotnet list SignRelay.sln package --vulnerable --include-transitive 2>&1 | tee vuln.txt && ! grep -q "has the following vulnerable packages" vuln.txt
+        run: |
+          set -euo pipefail
+          # NUKE (_build) pins transitive tooling packages. Those advisories must not fail CI.
+          # Shipping projects under src/ and tests/ stay gated.
+          fail=0
+          while IFS= read -r proj; do
+            echo "Scanning $proj"
+            out="vuln-$(basename "$proj" .csproj).txt"
+            dotnet list "$proj" package --vulnerable --include-transitive >"$out" 2>&1
+            cat "$out"
+            if grep -q "has the following vulnerable packages" "$out"; then
+              echo "::error::Vulnerable packages in $proj"
+              fail=1
+            fi
+          done < <(find src tests -name '*.csproj' -print | sort)
+          exit "$fail"
 
   action-dry-run:
     name: Composite action dry-run
