@@ -15,12 +15,19 @@ public sealed class JobService
     private readonly SignRelayOptions _opt;
     private readonly JobEventHub _hub;
     private readonly ILogger<JobService> _log;
+    private readonly IJobNotificationQueue _notifications;
 
-    public JobService(AppDbContext db, IOptions<SignRelayOptions> opt, JobEventHub hub, ILogger<JobService> log)
+    public JobService(
+        AppDbContext db,
+        IOptions<SignRelayOptions> opt,
+        JobEventHub hub,
+        IJobNotificationQueue notifications,
+        ILogger<JobService> log)
     {
         _db = db;
         _opt = opt.Value;
         _hub = hub;
+        _notifications = notifications;
         _log = log;
     }
 
@@ -327,6 +334,7 @@ public sealed class JobService
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Succeeded, Error = null });
+        _notifications.Enqueue(new JobNotification(jobId, JobStatus.Succeeded, job.CompletedUtc!.Value, null));
         _log.LogInformation("Job {JobId} signed successfully.", jobId);
     }
 
@@ -351,6 +359,7 @@ public sealed class JobService
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = persisted });
+        _notifications.Enqueue(new JobNotification(jobId, JobStatus.Failed, job.CompletedUtc!.Value, persisted));
     }
 
     public async Task ExtendLeaseAsync(string jobId, CancellationToken ct)

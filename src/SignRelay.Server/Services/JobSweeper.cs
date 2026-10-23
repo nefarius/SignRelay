@@ -47,6 +47,7 @@ public sealed class JobSweeper : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var hub = scope.ServiceProvider.GetRequiredService<JobEventHub>();
         var jobSvc = scope.ServiceProvider.GetRequiredService<JobService>();
+        var notifications = scope.ServiceProvider.GetRequiredService<IJobNotificationQueue>();
         var opt = scope.ServiceProvider.GetRequiredService<IOptions<SignRelayOptions>>().Value;
 
         var now = DateTimeOffset.UtcNow;
@@ -118,7 +119,10 @@ public sealed class JobSweeper : BackgroundService
         {
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             foreach (var (jobId, payload) in bufferedEvents)
+            {
                 hub.Publish(jobId, payload);
+                notifications.Enqueue(new JobNotification(jobId, payload.Status, now, payload.Error));
+            }
         }
 
         // Disk cleanup: delete artifact directories for jobs that reached a terminal state

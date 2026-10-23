@@ -25,4 +25,23 @@ public sealed class SignRelayOptions
     /// <see cref="ArtifactCleanupDelay"/>.
     /// </summary>
     public TimeSpan JobRecordRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>Optional outbound notifications for terminal job outcomes. Disabled when empty.</summary>
+    public NotificationOptions Notifications { get; set; } = new();
+}
+
+/// <summary>Optional Discord / Gotify notification settings. All values are secrets.</summary>
+public sealed class NotificationOptions
+{
+    /// <summary>Discord webhook URL. Empty disables Discord notifications.</summary>
+    public string DiscordWebhookUrl { get; set; } = "";
+
+    /// <summary>Gotify server base URL (e.g. https://gotify.example.com). Empty disables Gotify.</summary>
+    public string GotifyBaseUrl { get; set; } = "";
+
+    /// <summary>Gotify application token. Required when <see cref="GotifyBaseUrl"/> is set.</summary>
+    public string GotifyToken { get; set; } = "";
+
+    public bool DiscordEnabled => !string.IsNullOrWhiteSpace(DiscordWebhookUrl);
+    public bool GotifyEnabled => !string.IsNullOrWhiteSpace(GotifyBaseUrl);
 }

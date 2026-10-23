@@ -53,6 +53,10 @@ try
     });
 
     builder.Services.AddSingleton<JobEventHub>();
+    builder.Services.AddHttpClient(JobNotificationDispatcher.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+    builder.Services.AddSingleton<JobNotificationQueue>();
+    builder.Services.AddSingleton<IJobNotificationQueue>(sp => sp.GetRequiredService<JobNotificationQueue>());
+    builder.Services.AddHostedService<JobNotificationDispatcher>();
     builder.Services.AddScoped<JobService>();
     builder.Services.AddHostedService<JobSweeper>();
 

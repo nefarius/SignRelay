@@ -15,6 +15,9 @@ public sealed class SignRelayOptionsValidator : IValidateOptions<SignRelayOption
         _log = log;
     }
 
+    private static bool IsHttpUrl(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var u) && u.Scheme is "http" or "https";
+
     public ValidateOptionsResult Validate(string? name, SignRelayOptions options)
     {
         var errors = new List<string>();
@@ -44,6 +47,22 @@ public sealed class SignRelayOptionsValidator : IValidateOptions<SignRelayOption
             return ValidateOptionsResult.Fail(
                 "SignRelay:JobRecordRetention must be greater than or equal to SignRelay:ArtifactCleanupDelay " +
                 $"({options.ArtifactCleanupDelay}).");
+        }
+
+        var n = options.Notifications ?? new NotificationOptions();
+        if (n.DiscordEnabled && !IsHttpUrl(n.DiscordWebhookUrl))
+            return ValidateOptionsResult.Fail("SignRelay:Notifications:DiscordWebhookUrl must be an absolute http(s) URL.");
+
+        if (n.GotifyEnabled)
+        {
+            if (!IsHttpUrl(n.GotifyBaseUrl))
+                return ValidateOptionsResult.Fail("SignRelay:Notifications:GotifyBaseUrl must be an absolute http(s) URL.");
+            if (string.IsNullOrWhiteSpace(n.GotifyToken))
+                return ValidateOptionsResult.Fail("SignRelay:Notifications:GotifyToken is required when GotifyBaseUrl is set.");
+        }
+        else if (!string.IsNullOrWhiteSpace(n.GotifyToken))
+        {
+            return ValidateOptionsResult.Fail("SignRelay:Notifications:GotifyBaseUrl is required when GotifyToken is set.");
         }
 
         if (errors.Count == 0)
