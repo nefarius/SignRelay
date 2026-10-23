@@ -73,6 +73,21 @@ public sealed class JobNotificationTests
         Assert.Equal("tok123", gotify.Req.Headers.GetValues("X-Gotify-Key").Single());
     }
 
+    [Theory]
+    [InlineData("https://g.test", "/message", "")]
+    [InlineData("https://g.test/sub/", "/sub/message", "")]
+    [InlineData("https://g.test/sub/message", "/sub/message", "")]
+    [InlineData("https://g.test/sub?x=1", "/sub/message", "?x=1")]
+    public async Task Gotify_Url_AppendsMessageToPathOnly(string baseUrl, string path, string query)
+    {
+        var h = new RecordingHandler((_, _) => HttpStatusCode.OK);
+        var opt = new NotificationOptions { GotifyBaseUrl = baseUrl, GotifyToken = "t" };
+        await Make(opt, h).DispatchAsync(Fail(), default);
+        var url = Assert.Single(h.Calls).Url;
+        Assert.Equal(path, url.AbsolutePath);
+        Assert.Equal(query, url.Query);
+    }
+
     [Fact]
     public async Task TransientFailure_IsRetried_ThenSucceeds()
     {

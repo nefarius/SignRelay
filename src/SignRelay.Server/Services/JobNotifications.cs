@@ -136,7 +136,13 @@ public sealed class JobNotificationDispatcher : BackgroundService
 
     private HttpRequestMessage BuildGotify(JobNotification n)
     {
-        var baseUrl = _opt.GotifyBaseUrl.TrimEnd('/') + "/message";
+        // Append /message to the path only (keep any query string intact; don't duplicate the suffix).
+        var ub = new UriBuilder(_opt.GotifyBaseUrl);
+        var path = ub.Path.TrimEnd('/');
+        if (!path.EndsWith("/message", StringComparison.OrdinalIgnoreCase))
+            path += "/message";
+        ub.Path = path;
+        var baseUrl = ub.Uri.AbsoluteUri;
         var payload = new { title = Title(n), message = Body(n), priority = n.IsSuccess ? 4 : 8 };
         var req = new HttpRequestMessage(HttpMethod.Post, baseUrl)
         {
