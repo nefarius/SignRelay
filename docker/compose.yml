@@ -18,6 +18,10 @@ services:
       SignRelay__StoragePath: /data
       SignRelay__CiToken: ${SIGN_RELAY_CI_TOKEN:?set SIGN_RELAY_CI_TOKEN}
       SignRelay__AgentToken: ${SIGN_RELAY_AGENT_TOKEN:?set SIGN_RELAY_AGENT_TOKEN}
+      # Optional notifications (empty = disabled)
+      SignRelay__Notifications__DiscordWebhookUrl: ${SIGN_RELAY_DISCORD_WEBHOOK_URL:-}
+      SignRelay__Notifications__GotifyBaseUrl: ${SIGN_RELAY_GOTIFY_URL:-}
+      SignRelay__Notifications__GotifyToken: ${SIGN_RELAY_GOTIFY_TOKEN:-}
     volumes:
       - signrelay-data:/data
     restart: unless-stopped

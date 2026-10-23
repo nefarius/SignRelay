@@ -15,12 +15,19 @@ public sealed class JobService
     private readonly SignRelayOptions _opt;
     private readonly JobEventHub _hub;
     private readonly ILogger<JobService> _log;
+    private readonly IJobNotificationQueue _notifications;
 
-    public JobService(AppDbContext db, IOptions<SignRelayOptions> opt, JobEventHub hub, ILogger<JobService> log)
+    public JobService(
+        AppDbContext db,
+        IOptions<SignRelayOptions> opt,
+        JobEventHub hub,
+        IJobNotificationQueue notifications,
+        ILogger<JobService> log)
     {
         _db = db;
         _opt = opt.Value;
         _hub = hub;
+        _notifications = notifications;
         _log = log;
     }
 
@@ -319,14 +326,23 @@ public sealed class JobService
                 throw new InvalidOperationException($"Signed artifact missing for '{entry.RelativePath}'.");
         }
 
-        job.Status = JobStatus.Succeeded;
-        job.CompletedUtc = DateTimeOffset.UtcNow;
-        job.ErrorMessage = null;
-        // Clear lease token so it can no longer be used
-        job.LeaseTokenHash = null;
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        // Conditional update: only transition while still Leased/Signing so a concurrent
+        // sweeper/fail transition cannot be overwritten (and no contradictory result is announced).
+        var completedUtc = DateTimeOffset.UtcNow;
+        var rows = await _db.Jobs
+            .Where(j => j.Id == jobId && (j.Status == JobStatus.Leased || j.Status == JobStatus.Signing))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(j => j.Status, JobStatus.Succeeded)
+                .SetProperty(j => j.CompletedUtc, completedUtc)
+                .SetProperty(j => j.ErrorMessage, (string?)null)
+                // Clear lease token so it can no longer be used
+                .SetProperty(j => j.LeaseTokenHash, (string?)null), ct)
+            .ConfigureAwait(false);
+        if (rows != 1)
+            throw new InvalidOperationException("Job is not in a completable state.");
 
         _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Succeeded, Error = null });
+        _notifications.Enqueue(new JobNotification(jobId, JobStatus.Succeeded, completedUtc, null));
         _log.LogInformation("Job {JobId} signed successfully.", jobId);
     }
 
@@ -341,16 +357,24 @@ public sealed class JobService
         if (job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.TimedOut)
             return;
 
-        _log.LogWarning("Job {JobId} failed: {Error}", jobId, error);
         var persisted = HttpFailureDetails.Persist(error);
+        var completedUtc = DateTimeOffset.UtcNow;
 
-        job.Status = JobStatus.Failed;
-        job.CompletedUtc = DateTimeOffset.UtcNow;
-        job.ErrorMessage = persisted;
-        job.LeaseTokenHash = null;
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        // Conditional update: only the transition that wins from a non-terminal state publishes.
+        var rows = await _db.Jobs
+            .Where(j => j.Id == jobId && j.Status < JobStatus.Succeeded)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(j => j.Status, JobStatus.Failed)
+                .SetProperty(j => j.CompletedUtc, completedUtc)
+                .SetProperty(j => j.ErrorMessage, persisted)
+                .SetProperty(j => j.LeaseTokenHash, (string?)null), ct)
+            .ConfigureAwait(false);
+        if (rows != 1)
+            return;
 
+        _log.LogWarning("Job {JobId} failed: {Error}", jobId, error);
         _hub.Publish(jobId, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = persisted });
+        _notifications.Enqueue(new JobNotification(jobId, JobStatus.Failed, completedUtc, persisted));
     }
 
     public async Task ExtendLeaseAsync(string jobId, CancellationToken ct)

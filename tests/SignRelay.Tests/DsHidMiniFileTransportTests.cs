@@ -42,6 +42,7 @@ public sealed class DsHidMiniFileTransportTests : IDisposable
                 MaxLeaseAttempts = 3,
             }),
             _hub,
+            new RecordingNotificationQueue(),
             NullLogger<JobService>.Instance);
     }
 

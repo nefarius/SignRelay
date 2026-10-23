@@ -47,14 +47,20 @@ public sealed class JobSweeper : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var hub = scope.ServiceProvider.GetRequiredService<JobEventHub>();
         var jobSvc = scope.ServiceProvider.GetRequiredService<JobService>();
+        var notifications = scope.ServiceProvider.GetRequiredService<IJobNotificationQueue>();
         var opt = scope.ServiceProvider.GetRequiredService<IOptions<SignRelayOptions>>().Value;
 
         var now = DateTimeOffset.UtcNow;
         var terminalFloor = (int)JobStatus.Succeeded;
 
-        // Collect SSE events to publish AFTER SaveChangesAsync so subscribers only see
-        // transitions that were actually committed to the database.
-        var bufferedEvents = new List<(string JobId, JobEventPayload Payload)>();
+        // Each ExecuteUpdate/ExecuteSql commits on its own. Publish only after that
+        // statement succeeds so a later query, update, or cancellation cannot drop a
+        // transition that is already durable (the next sweep will not see it again).
+        void PublishCommitted(string jobId, JobStatus status, string error)
+        {
+            hub.Publish(jobId, new JobEventPayload { Type = "done", Status = status, Error = error });
+            notifications.Enqueue(new JobNotification(jobId, status, now, error));
+        }
 
         // Jobs that have hit their overall TTL without reaching a terminal state
         var expired = await db.Jobs
@@ -63,18 +69,28 @@ public sealed class JobSweeper : BackgroundService
                  SELECT * FROM Jobs
                  WHERE ExpiresUtc <= {now} AND Status < {terminalFloor}
                  """)
-            .AsTracking()
+            .AsNoTracking()
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+        // Each transition is a conditional UPDATE guarded by the eligible status, so a concurrent
+        // complete/fail cannot be overwritten and only the winner publishes a terminal result.
+        const string timeoutMessage = "Job expired before completion.";
         foreach (var j in expired)
         {
-            j.Status = JobStatus.TimedOut;
-            j.CompletedUtc = now;
-            j.ErrorMessage = "Job expired before completion.";
-            j.LeaseTokenHash = null;
-            bufferedEvents.Add((j.Id, new JobEventPayload { Type = "done", Status = JobStatus.TimedOut, Error = j.ErrorMessage }));
-            _log.LogWarning("Job {JobId} timed out.", j.Id);
+            var id = j.Id;
+            var rows = await db.Jobs
+                .Where(x => x.Id == id && x.Status < JobStatus.Succeeded)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, JobStatus.TimedOut)
+                    .SetProperty(x => x.CompletedUtc, now)
+                    .SetProperty(x => x.ErrorMessage, timeoutMessage)
+                    .SetProperty(x => x.LeaseTokenHash, (string?)null), ct)
+                .ConfigureAwait(false);
+            if (rows != 1)
+                continue;
+            PublishCommitted(id, JobStatus.TimedOut, timeoutMessage);
+            _log.LogWarning("Job {JobId} timed out.", id);
         }
 
         // Jobs whose lease has expired but overall TTL has not — requeue or permanently fail
@@ -86,39 +102,46 @@ public sealed class JobSweeper : BackgroundService
                    AND LeaseExpiresUtc <= {now}
                    AND ExpiresUtc > {now}
                  """)
-            .AsTracking()
+            .AsNoTracking()
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
         foreach (var j in staleLeases)
         {
+            var id = j.Id;
             if (j.LeaseAttempts >= opt.MaxLeaseAttempts)
             {
-                j.Status = JobStatus.Failed;
-                j.CompletedUtc = now;
-                j.ErrorMessage = $"Job exceeded maximum lease attempts ({opt.MaxLeaseAttempts}).";
-                j.LeaseTokenHash = null;
-                bufferedEvents.Add((j.Id, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = j.ErrorMessage }));
-                _log.LogWarning("Job {JobId} permanently failed: too many lease attempts.", j.Id);
+                var message = $"Job exceeded maximum lease attempts ({opt.MaxLeaseAttempts}).";
+                var rows = await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"""
+                     UPDATE Jobs
+                     SET Status = {(int)JobStatus.Failed}, CompletedUtc = {now},
+                         ErrorMessage = {message}, LeaseTokenHash = NULL
+                     WHERE Id = {id}
+                       AND Status IN ({(int)JobStatus.Leased}, {(int)JobStatus.Signing})
+                       AND LeaseExpiresUtc <= {now}
+                     """, ct).ConfigureAwait(false);
+                if (rows != 1)
+                    continue;
+                PublishCommitted(id, JobStatus.Failed, message);
+                _log.LogWarning("Job {JobId} permanently failed: too many lease attempts.", id);
             }
             else
             {
                 // Requeue: reset to Pending so another agent can pick it up
-                j.Status = JobStatus.Pending;
-                j.LeaseAgentId = null;
-                j.LeasedUtc = null;
-                j.LeaseTokenHash = null;
-                j.LeaseExpiresUtc = null;
-                _log.LogInformation("Job {JobId} requeued after stale lease (attempt {Attempt}/{Max}).",
-                    j.Id, j.LeaseAttempts, opt.MaxLeaseAttempts);
+                var rows = await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"""
+                     UPDATE Jobs
+                     SET Status = {(int)JobStatus.Pending}, LeaseAgentId = NULL, LeasedUtc = NULL,
+                         LeaseTokenHash = NULL, LeaseExpiresUtc = NULL
+                     WHERE Id = {id}
+                       AND Status IN ({(int)JobStatus.Leased}, {(int)JobStatus.Signing})
+                       AND LeaseExpiresUtc <= {now}
+                     """, ct).ConfigureAwait(false);
+                if (rows == 1)
+                    _log.LogInformation("Job {JobId} requeued after stale lease (attempt {Attempt}/{Max}).",
+                        id, j.LeaseAttempts, opt.MaxLeaseAttempts);
             }
-        }
-
-        if (expired.Count > 0 || staleLeases.Count > 0)
-        {
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            foreach (var (jobId, payload) in bufferedEvents)
-                hub.Publish(jobId, payload);
         }
 
         // Disk cleanup: delete artifact directories for jobs that reached a terminal state

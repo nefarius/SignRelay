@@ -18,6 +18,48 @@ public sealed class JobServiceTests : IDisposable
     private readonly JobEventHub _hub;
     private readonly JobService _sut;
     private readonly string _storagePath;
+    private RecordingNotificationQueue Notifications { get; } = new();
+
+    [Fact]
+    public async Task FailJobAsync_EnqueuesOneNotification_AndIdempotentCallDoesNot()
+    {
+        var (job, _) = await CreateTestJobAsync();
+        await _sut.FailJobAsync(job.Id, "boom", CancellationToken.None);
+        await _sut.FailJobAsync(job.Id, "again", CancellationToken.None);
+
+        var n = Assert.Single(Notifications.Items);
+        Assert.Equal(job.Id, n.JobId);
+        Assert.Equal(JobStatus.Failed, n.Status);
+        Assert.Equal("boom", n.Error);
+    }
+
+    [Fact]
+    public async Task FailJobAsync_OnSucceededJob_DoesNotNotify()
+    {
+        var (job, _) = await CreateTestJobAsync();
+        var entity = await _db.Jobs.FindAsync(job.Id);
+        entity!.Status = JobStatus.Succeeded;
+        await _db.SaveChangesAsync();
+
+        await _sut.FailJobAsync(job.Id, "late", CancellationToken.None);
+        Assert.Empty(Notifications.Items);
+    }
+
+    [Fact]
+    public async Task CompleteJobAsync_EnqueuesSuccessNotification()
+    {
+        var (job, _) = await CreateTestJobAsync();
+        await _sut.TryLeaseAsync("agent-1", CancellationToken.None);
+        var signedRoot = Path.Combine(_storagePath, "jobs", job.Id, "signed");
+        Directory.CreateDirectory(signedRoot);
+        await File.WriteAllBytesAsync(Path.Combine(signedRoot, "file.exe"), [0x4D, 0x5A]);
+
+        await _sut.CompleteJobAsync(job.Id, CancellationToken.None);
+
+        var n = Assert.Single(Notifications.Items);
+        Assert.Equal(JobStatus.Succeeded, n.Status);
+        Assert.Null(n.Error);
+    }
 
     public JobServiceTests()
     {
@@ -40,7 +82,7 @@ public sealed class JobServiceTests : IDisposable
             MaxLeaseAttempts = 3,
         });
 
-        _sut = new JobService(_db, opts, _hub, NullLogger<JobService>.Instance);
+        _sut = new JobService(_db, opts, _hub, Notifications, NullLogger<JobService>.Instance);
     }
 
     public void Dispose()

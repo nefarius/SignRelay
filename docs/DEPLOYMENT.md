@@ -91,6 +91,21 @@ dotnet run --project build/_build.csproj -- Release
   - `SignRelay__ArtifactCleanupDelay` — grace period after terminal state before on-disk artifacts are deleted (default `01:00:00`)
   - `SignRelay__JobRecordRetention` — how long terminal **SQLite rows** are kept after completion (default `7.00:00:00`). Must be ≥ `ArtifactCleanupDelay`.
 
+### Optional notifications (Discord / Gotify)
+
+The relay can announce every terminal job outcome (succeeded, failed, timed out, max lease attempts exceeded). Both providers are **disabled by default** and independent of each other. Requeues after a stale lease are not announced.
+
+| Key | Purpose |
+| --- | --- |
+| `SignRelay__Notifications__DiscordWebhookUrl` | Discord webhook URL (absolute http(s)). Empty = Discord disabled. |
+| `SignRelay__Notifications__GotifyBaseUrl` | Gotify server base URL, e.g. `https://gotify.example.com`. Empty = Gotify disabled. |
+| `SignRelay__Notifications__GotifyToken` | Gotify application token. Required with `GotifyBaseUrl`; sent in the `X-Gotify-Key` header. |
+
+- Delivery is **best-effort**, in-memory, and asynchronous: it never changes or delays the job result. Pending notifications are lost on restart.
+- Transient failures (network, 408, 429, 5xx) are retried up to 3 attempts; a retry after a lost response can produce a duplicate message.
+- Webhook URL and token are **secrets**: set them via environment variables, never commit them. They are not logged.
+- Invalid configuration (non-http(s) URL, Gotify URL without token or vice versa) fails startup.
+
 ### Published container image
 
 Tagged releases push to **Azure Container Registry**:

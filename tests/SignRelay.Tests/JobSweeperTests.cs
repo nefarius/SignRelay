@@ -20,6 +20,25 @@ public sealed class JobSweeperTests : IDisposable
     private readonly JobEventHub _hub;
     private readonly JobSweeper _sut;
     private readonly SignRelayOptions _opts;
+    private RecordingNotificationQueue Notifications { get; } = new();
+
+    [Fact]
+    public async Task SweepOnceAsync_NotifiesTimeoutAndMaxLeaseFailure_NotRequeue()
+    {
+        var timedOut = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1";
+        var failed = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2";
+        var requeued = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb3";
+        await SeedAsync(
+            MakeJob(timedOut, JobStatus.Pending, expiresUtc: DateTimeOffset.UtcNow.AddMinutes(-5), leaseTokenHash: null, leaseAgentId: null),
+            MakeJob(failed, JobStatus.Signing, leaseExpiresUtc: DateTimeOffset.UtcNow.AddMinutes(-1), leaseAttempts: 3),
+            MakeJob(requeued, JobStatus.Leased, leaseExpiresUtc: DateTimeOffset.UtcNow.AddMinutes(-1), leaseAttempts: 1));
+
+        await _sut.SweepOnceAsync(CancellationToken.None);
+
+        Assert.Equal(2, Notifications.Items.Count);
+        Assert.Contains(Notifications.Items, n => n.JobId == timedOut && n.Status == JobStatus.TimedOut);
+        Assert.Contains(Notifications.Items, n => n.JobId == failed && n.Status == JobStatus.Failed);
+    }
 
     public JobSweeperTests()
     {
@@ -40,6 +59,7 @@ public sealed class JobSweeperTests : IDisposable
         services.AddDbContext<AppDbContext>(o =>
             o.UseSqlite($"Data Source={Path.Combine(_storagePath, "test.db")}"));
         services.AddSingleton(_hub = new JobEventHub());
+        services.AddSingleton<IJobNotificationQueue>(Notifications);
         services.AddScoped<JobService>();
         services.AddSingleton(Options.Create(_opts));
         services.AddLogging();
