@@ -53,9 +53,14 @@ public sealed class JobSweeper : BackgroundService
         var now = DateTimeOffset.UtcNow;
         var terminalFloor = (int)JobStatus.Succeeded;
 
-        // Collect SSE events to publish AFTER SaveChangesAsync so subscribers only see
-        // transitions that were actually committed to the database.
-        var bufferedEvents = new List<(string JobId, JobEventPayload Payload)>();
+        // Each ExecuteUpdate/ExecuteSql commits on its own. Publish only after that
+        // statement succeeds so a later query, update, or cancellation cannot drop a
+        // transition that is already durable (the next sweep will not see it again).
+        void PublishCommitted(string jobId, JobStatus status, string error)
+        {
+            hub.Publish(jobId, new JobEventPayload { Type = "done", Status = status, Error = error });
+            notifications.Enqueue(new JobNotification(jobId, status, now, error));
+        }
 
         // Jobs that have hit their overall TTL without reaching a terminal state
         var expired = await db.Jobs
@@ -84,7 +89,7 @@ public sealed class JobSweeper : BackgroundService
                 .ConfigureAwait(false);
             if (rows != 1)
                 continue;
-            bufferedEvents.Add((id, new JobEventPayload { Type = "done", Status = JobStatus.TimedOut, Error = timeoutMessage }));
+            PublishCommitted(id, JobStatus.TimedOut, timeoutMessage);
             _log.LogWarning("Job {JobId} timed out.", id);
         }
 
@@ -118,7 +123,7 @@ public sealed class JobSweeper : BackgroundService
                      """, ct).ConfigureAwait(false);
                 if (rows != 1)
                     continue;
-                bufferedEvents.Add((id, new JobEventPayload { Type = "done", Status = JobStatus.Failed, Error = message }));
+                PublishCommitted(id, JobStatus.Failed, message);
                 _log.LogWarning("Job {JobId} permanently failed: too many lease attempts.", id);
             }
             else
@@ -137,13 +142,6 @@ public sealed class JobSweeper : BackgroundService
                     _log.LogInformation("Job {JobId} requeued after stale lease (attempt {Attempt}/{Max}).",
                         id, j.LeaseAttempts, opt.MaxLeaseAttempts);
             }
-        }
-
-        // Publish only transitions that this sweep actually committed.
-        foreach (var (jobId, payload) in bufferedEvents)
-        {
-            hub.Publish(jobId, payload);
-            notifications.Enqueue(new JobNotification(jobId, payload.Status, now, payload.Error));
         }
 
         // Disk cleanup: delete artifact directories for jobs that reached a terminal state
