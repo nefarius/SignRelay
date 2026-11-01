@@ -1,5 +1,5 @@
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:10.0.402 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.403 AS build
 ARG MINVERVERSIONOVERRIDE
 ENV MINVERVERSIONOVERRIDE=$MINVERVERSIONOVERRIDE
 WORKDIR /src
