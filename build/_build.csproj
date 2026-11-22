@@ -17,7 +17,7 @@
   <ItemGroup>
     <PackageReference Include="Nuke.Common" Version="10.1.0" />
     <!-- Force-pin transitive Nuke deps to versions with no known CVEs -->
-    <PackageReference Include="NuGet.Packaging" Version="7.9.0" />
+    <PackageReference Include="NuGet.Packaging" Version="8.0.0" />
     <PackageReference Include="System.Security.Cryptography.Xml" Version="11.0.0" />
   </ItemGroup>
 </Project>
